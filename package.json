@@ -1,0 +1,34 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@bufbuild/buf": "^1.47.2",
+    "@bufbuild/protobuf": "^2.2.2",
+    "jwt-decode": "^4.0.0",
+    "pocketbase": "^0.22.1",
+    "sharp": "^0.33.5",
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "bufferutil": "^4.0.8"
+  },
+  "name": "pixelwalker",
+  "version": "1.0.0",
+  "description": "Pixelwalker js bindings",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sollybunny/pixelwalker.git"
+  },
+  "keywords": [
+    "pixelwalker",
+    "api",
+    "bindings",
+    "library",
+    "everybodyedits"
+  ],
+  "author": "SollyBunny",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/sollybunny/pixelwalker/issues"
+  },
+  "homepage": "https://github.com/sollybunny/pixelwalker#readme"
+}
