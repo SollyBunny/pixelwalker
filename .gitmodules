@@ -1,3 +1,4 @@
-[submodule "protocol"]
+
+[submodule "protocol/protocol"]
 	path = protocol/protocol
 	url = https://github.com/PixelWalkerGame/Protocol/
