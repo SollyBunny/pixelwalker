@@ -54,7 +54,7 @@ export class Room extends EventEmitter {
 		this.type = type;
 		this.open = true;
 		this.ws = ws;
-		this.workqueue = new WorkQueue(({ name, value }) => this.sendNow(name, value), 200);
+		this.workqueue = new WorkQueue(({ name, value }) => this.sendNow(name, value), 50);
 		this.ws.on("close", (code, reason) => {
 			if (!this.open) return;
 			this.open = false;
@@ -93,7 +93,6 @@ export class Room extends EventEmitter {
 	}
 	send(name, value) {
 		this.workqueue.push({ name, value });
-		console.log(this.workqueue._data)
 	}
 	addDefaultListeners() {
 		// Init

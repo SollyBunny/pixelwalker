@@ -78,13 +78,15 @@ export class World extends EventEmitter {
 			if (name !== "worldBlockPlacedPacket") return true;
 			const { positions: positionsQ, layer: layerQ, blockId: blockIdQ, extraFields: extraFieldsQ } = value;
 			// 2. Look for matching block / layer
-			//    Add to positions, remove from queue
-			if (blockId === blockIdQ && layer === layerQ && extraFields.equals(extraFieldsQ)) {
+			//    Add to positions, remove from queue (if less than 100 blocks in packet)
+			if (positionsQ.length < 100 && blockId === blockIdQ && layer === layerQ && extraFields.equals(extraFieldsQ)) {
 				for (const position of positionsQ) {
 					const hash = muxInt16(position.x, position.y);
 					if (!positionsHash.has(hash)) {
 						positionsHash.add(hash);
 						positions.push(position);
+						if (positionsQ.length >= 100)
+							break;
 					}
 				}
 				return false;
@@ -171,12 +173,14 @@ export class World extends EventEmitter {
 				return;
 			clearTimeout(rejectTimeout);
 			const blockOld = this.get(x, y, layer);
-			console.log(blockOld, block);
 			resolve({ block, blockOld, x, y, layer });
 		};
 		rejectTimeout = setTimeout(() => {
 			this.removeListener("blockPlaced", blockPlacedEvent);
-			reject(new Error(`Block ${blockStr} not placed within ${timeout} seconds`));
+			if (blockStr)
+				reject(new Error(`Block ${blockStr} not placed within ${timeout} seconds`));
+			else
+				reject(new Error(`Block not placed within ${timeout} seconds`));
 		}, timeout * 1000);
 		this.on("blockPlaced", blockPlacedEvent);
 	}); }
