@@ -91,16 +91,20 @@ export class World extends EventEmitter {
 				}
 				return false;
 			}
-			// 3. Look for matching positions
+			// 3. Look for matching positions (on same layer)
 			//    Remove them, if empty remove from queue
-			for (let i = 0; i < positionsQ.length; ++i) {
-				const { x, y } = positionsQ[i];
-				if (positionsHash.has(muxInt16(x, y))) {
-					positionsQ.splice(i, 1);
-					--i; // Adjust the index to check the next element after removal
+			if (layer === layerQ) {
+				for (let i = 0; i < positionsQ.length; ++i) {
+					const { x, y } = positionsQ[i];
+					if (positionsHash.has(muxInt16(x, y))) {
+						positionsQ.splice(i, 1);
+						--i; // Adjust the index to check the next element after removal
+					}
 				}
+				return positionsQ.length > 0;
 			}
-			return positionsQ.length > 0;
+
+			return true;
 		});
 		this.room.send("worldBlockPlacedPacket", {
 			isFillOperation: false,
@@ -150,12 +154,13 @@ export class World extends EventEmitter {
 			if (!block) continue;
 			this.set(x1 + x, y1 + y, layer, block);
 		}
+		console.log("DONE")
 	}
 	setArea(x1, y1, x2, y2, layer, block) {
 		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)
 			this.set(x, y, layer, block);
 	}
-	select(blockStr, player, timeout) { return new Promise(async (resolve, reject) => {
+	waitForBlockPlaced(player, blockStr, timeout) { return new Promise(async (resolve, reject) => {
 		timeout = timeout ?? 30;
 		let id;
 		if (blockStr !== undefined) {
@@ -184,14 +189,17 @@ export class World extends EventEmitter {
 		}, timeout * 1000);
 		this.on("blockPlaced", blockPlacedEvent);
 	}); }
-	async selectSub(blockStr, player, timeout) {
+	async select(player, blockStr, timeout) {
+		let { x, y, layer, blockOld } = await this.waitForBlockPlaced(player, blockStr, timeout);
+		this.set(x, y, layer, blockOld);
+		return { x, y, layer, blockOld };
+	}
+	async selectSub(player, blockStr, timeout) {
 		this.room.chat.whisper(player, "Place 2 blocks to select rectangular region");
-		let { x: x1, y: y1, layer: layer1, blockOld: blockOld1 } = await this.select(blockStr, player, timeout);
-		this.room.chat.whisper(player, `Selected first position ${x1}, ${y1}`);
-		this.set(x1, y1, layer1, blockOld1);
-		let { x: x2, y: y2, layer: layer2, blockOld: blockOld2 } = await this.select(blockStr, player, timeout);
-		this.room.chat.whisper(player, `Selected second position ${x2}, ${y2}`);
-		this.room.world.set(x2, y2, layer2, blockOld2);
+		let { x: x1, y: y1, layer: layer1, blockOld: blockOld1 } = await this.select(player, blockStr, timeout);
+		this.room.chat.whisper(player, `Selected first position: ${x1}, ${y1}`);
+		let { x: x2, y: y2, layer: layer2, blockOld: blockOld2 } = await this.select(player, blockStr, timeout);
+		this.room.chat.whisper(player, `Selected second position: ${x2}, ${y2}`);
 		if (x1 > x2) {
 			const temp = x2;
 			x2 = x1;
@@ -208,6 +216,6 @@ export class World extends EventEmitter {
 		if (size === 0)
 			throw new Error("Region empty");
 		this.room.chat.whisper(player, `Selected region: ${x1}, ${y1} to ${x2}, ${y2}. Size: ${width}x${height} (${size} blocks)`);
-		return { x1, y1, x2, y2, width, height, size };
+		return { x1, y1, x2, y2, width, height, size, layer1, blockOld1, layer2, blockOld2 };
 	}
 }

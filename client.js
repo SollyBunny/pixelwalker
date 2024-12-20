@@ -4,6 +4,15 @@ import { jwtDecode } from "jwt-decode";
 import { URLServerAPI, URLServerGame } from "./endpoints.js"
 import { BlockManager } from "./components/structure.js";
 
+function int32ToRgba(int32) {
+	return [
+		(int32 >> 16) & 0xFF, // Blue
+		(int32 >> 8) & 0xFF,  // Green
+		int32 & 0xFF,         // Red
+		(int32 >> 24) & 0xFF, // Alpha
+	];
+}
+
 export class Client {
 	static async fromLogin(identity, password, local) {
 		const res = await fetch(URLServerAPI(local) + "/api/collections/users/auth-with-password", {
@@ -54,6 +63,16 @@ export class Client {
 			this._roomTypes = await this._roomTypes.json();
 		}
 		return this._roomTypes;
+	}
+	async blockColorsMap() {
+		if (!this._blockColorsMap) {
+			const blockManager = await this.blockManager();
+			this._blockColorsMap = (await import("./blockColorsMap.json", { with: { type: "json" } })).default;
+			this._blockColorsMap = Object.fromEntries(Object.entries(this._blockColorsMap).map(([name, color]) => {
+				return [blockManager.name(Number(name)), int32ToRgba(color)];
+			}));
+		}
+		return this._blockColorsMap;
 	}
 	async blockMappings() {
 		if (!this._blockMappings) {

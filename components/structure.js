@@ -214,7 +214,7 @@ export class Structure {
 		return new Structure(width, height, data);
 	}
 	static async fromImage(manager, path, maxsize, colors) {
-		const img = Sharp(path).rotate(90).flip(true);
+		const img = Sharp(path).rotate().toColorspace("rgb8");
 		const metadata = await img.metadata();
 		const scale = maxsize / Math.max(metadata.width, metadata.height);
 		let width = Math.round(metadata.width * scale);
@@ -224,18 +224,19 @@ export class Structure {
 		const raw = await img.resize(width, height).raw().toBuffer();
 		const data = [];
 		function bestColor(r, g, b) {
-			let best = 0;
+			let best = "";
 			let bestDist = Infinity;
-			for (const [id, color] of Object.entries(colors)) {
+			for (const [name, color] of Object.entries(colors)) {
+				if (color[3] === 0) continue;
 				const dist = Math.abs(r - color[0]) + Math.abs(g - color[1]) + Math.abs(b - color[2]);
 				if (dist < bestDist) {
-					best = id;
+					best = name;
 					bestDist = dist;
 				}
 			}
 			return best;
 		}
-		for (let i = 0; i < raw.length; i += metadata.channels) {
+		for (let i = 0; i < raw.length; i += 3) {
 			const key = bestColor(raw[i], raw[i + 1], raw[i + 2]);
 			const block = Block.fromManager(manager, key);
 			if (!block) {
