@@ -36,11 +36,22 @@ export class World extends EventEmitter {
 			for (const { x, y } of positions)
 				this.structure.set(x, y, layer, block);
 		});
-		this.room.on("globalSwitchChangedPacket", packet => {
-			this.globalSwitches[packet.switchId] = packet.enabled;
-			this.emit("globalSwitch", { player: this.room.players.get(packet.playerId), id: packet.switchId, enabled: packet.enabled });
+		this.room.on("globalSwitchChangedPacket", ({ switchId, enabled, playerId }) => {
+			const data = { player: this.room.players.get(playerId), id: switchId, enabled };
+			this.emit("globalSwitch", data);
+			this.emit("globalSwitchFinish", data);
 		});
-		this.room.on("globalSwitch")
+		this.on("globalSwitchFinish", ({ id, enabled }) => {
+			this.globalSwitches[id] = enabled;
+		});
+		this.room.on("globalSwitch", ({ enabled, playerId }) => {
+			data = { player: this.room.players.get(playerId), enabled };
+			this.emit("globalSwitchReset", data);
+			this.emit("globalSwitchResetFinish", data);
+		});
+		this.on("globalSwitchResetFinish", ({ enabled }) => {
+			this.globalSwitches.fill(enabled);
+		});
 	}
 	get width() {
 		return this.structure.width;
