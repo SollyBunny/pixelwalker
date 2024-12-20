@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import { toBinary, fromBinary, create } from "@bufbuild/protobuf";
 import { WorldPacketSchema } from "./protocol/world_pb.js";
 
+import { WorkQueue } from "./workqueue.js";
 import { URLServerSocketGame } from "./endpoints.js"
 import { Chat } from "./components/chat.js";
 import { Players } from "./components/players.js";
@@ -31,13 +32,19 @@ export class Room extends EventEmitter {
 		super();
 		if (ws.readyState !== WebSocket.OPEN)
 			throw new Error("WebSocket is not open");
-		const deconstructorError = function(error) {
-			process.removeListener("uncaughtException", deconstructorError);
-			deconstructor();
-			throw error;
+		const deconstructor = error => {
+			process.removeListener("uncaughtException", deconstructor);
+			process.removeListener("exit", deconstructor);
+			process.removeListener("SIGINT", deconstructor);
+			process.removeListener("SIGUSR1", deconstructor);
+			process.removeListener("SIGUSR2", deconstructor);
+			this.deconstructor();
+			if (typeof(error) === "string")
+				process.kill(process.pid, error)
+			if (error instanceof Error)
+				throw error;
 		};
-		process.on("uncaughtException", deconstructorError);
-		const deconstructor = () => this.deconstructor();
+		process.on("uncaughtException", deconstructor);
 		process.on("exit", deconstructor);
 		process.on("SIGINT", deconstructor);
 		process.on("SIGUSR1", deconstructor);
@@ -45,8 +52,9 @@ export class Room extends EventEmitter {
 		this.client = client;
 		this.id = id;
 		this.type = type;
-		this.ws = ws;
 		this.open = true;
+		this.ws = ws;
+		this.workqueue = new WorkQueue(({ name, value }) => this.sendNow(name, value), 200);
 		this.ws.on("close", (code, reason) => {
 			if (!this.open) return;
 			this.open = false;
@@ -62,6 +70,7 @@ export class Room extends EventEmitter {
 	deconstructor() {
 		if (!this.open) return;
 		this.open = false;
+		this.workqueue.close();
 		this.ws.close();
 	}
 	async protobuf() {
@@ -74,36 +83,28 @@ export class Room extends EventEmitter {
 			this._WorldPacketSchema = (await this.protobuf()).lookupType("WorldPacket");
 		return this._WorldPacketSchema;
 	}
-	async send(name, value) {
+	sendNow(name, value) {
 		const message = create(WorldPacketSchema, { packet: { case: name, value: value ?? {} } });
 		const buffer = toBinary(WorldPacketSchema, message);
-		function formatBufferToHexQuads(buffer) {
-			// Convert the buffer to a hexadecimal string
-			const hexString = buffer.toString('hex');
-		
-			// Split the string into chunks of four characters
-			const chunks = [];
-			for (let i = 0; i < hexString.length; i += 4) {
-				chunks.push(hexString.slice(i, i + 4));
-			}
-		
-			// Join the chunks with spaces
-			const formattedHex = chunks.join(' ');
-			return formattedHex;
-		}
-		// console.log(formatBufferToHexQuads(Buffer.from(buffer)));
 		this.ws.send(buffer);
+	}
+	sendFilter(pred) {
+		this.workqueue.filter(pred);
+	}
+	send(name, value) {
+		this.workqueue.push({ name, value });
+		console.log(this.workqueue._data)
 	}
 	addDefaultListeners() {
 		// Init
 		this.on("ping", () => {
-			this.send("ping");
+			this.sendNow("ping");
 		});
 		this.on("playerInitPacket", () => {
-			this.send("playerInitReceived");
+			this.sendNow("playerInitReceived");
 		});
 		// Components
-		this.players =  new Players(this);
+		this.players = new Players(this);
 		this.chat = new Chat(this);
 		this.world = new World(this);
 	}

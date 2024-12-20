@@ -158,7 +158,7 @@ export class Block {
 	}
 	serializeProperties() {
 		if (!this.types)
-			return new Uint8Array();
+			return Buffer.alloc(0);
 		let length = 0;
 		for (const { name, type } of this.types) {
 			length += 1;
@@ -264,7 +264,12 @@ export class Structure {
 	empty() {
 		return this.data.every(block => block.empty());
 	}
+	clone() {
+		return new Structure(this.width, this.height, [...this.data])
+	}
 	trim() {
+		if (this.width === 0 || this.height === 0)
+			return this.clone();
 		let trimTop, trimBottom, trimLeft, trimRight;
 		let x, y, layer;
 		loopTrimTop: for (trimTop = 0; trimTop < this.height; ++trimTop) {

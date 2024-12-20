@@ -1,7 +1,5 @@
 import { EventEmitter } from "events";
 
-import { Vec2 } from "./vec2.js";
-
 export class Player {
 	static fromProperties(properties) {
 		return new Player(properties.playerId, properties.username, properties.accountId, properties.face, properties.role, properties.isFriend, properties.isWorldOwner, properties?.position?.x, properties?.position?.y, properties?.rights?.canEdit, properties?.rights?.canGod, properties?.rights?.canToggleMinimap, properties?.rights?.canChangeWorldSettings);
@@ -14,7 +12,7 @@ export class Player {
 		this.role = role;
 		this.friend = friend;
 		this.owner = owner;
-		this.position = new Vec2(x ?? 1, y ?? 1);
+		this.position = { x: x ?? 1, y: y ?? 1 };
 		this.canEdit = canEdit;
 		this.canGod = canGod;
 		this.canToggleMinimap = canToggleMinimap;
@@ -48,7 +46,7 @@ export class Players extends EventEmitter {
 		this.room.on("playerLeftPacket", packet => {
 			this.emit("leave", { player: this.players.get(packet.playerId) });
 			this.players.delete(packet.playerId);
-		})
+		});
 		this.room.on("playerGodModePacket", packet => {
 			const player = this.players.get(packet.playerId);
 			player.god = packet.enabled;
