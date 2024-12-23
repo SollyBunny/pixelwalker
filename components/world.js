@@ -1,20 +1,18 @@
 import { EventEmitter } from "events";
+
 import { Structure, Block } from "./structure.js";
 
-function muxInt16(x, y) {
-	return (x << 16) | y;
-}
-
-function demuxInt16(i) {
-	const x = (i >> 16) & 0xFFFF;
-	const y = i & 0xFFFF;
-	return { x, y };
-}
+import { CustomMap, hash2 } from "../lib/custommap.js";
 
 export class World extends EventEmitter {
 	constructor(room) {
 		super();
 		this.room = room;
+		this.room.workqueue.sourceAdd(this._workqueueSource.bind(this));
+		this._workqueue = new CustomMap(
+			({ layer, block }) => hash2(layer, block.id),
+			({ layer: layerA, block: blockA }, { layer: layerB, block: blockB }) => layerA === layerB && blockA.equals(blockB)
+		);
 		this.addDefaultListeners();
 	}
 	addDefaultListeners() {
@@ -68,70 +66,47 @@ export class World extends EventEmitter {
 	getSub(x1, y1, x2, y2) {
 		return this.structure.getSub(x1, y1, x2, y2);
 	}
-	_setMany(positions, layer, block) {
-		const blockId = block.id;
-		const extraFields = block.serializeProperties();
-		const positionsHash = new Set(positions.map(({x, y}) => muxInt16(x, y)));
-		this.room.sendFilter(({ name, value }) => {
-			// For each pending packet
-			// 1. Ignore if not a worldBlockPlacedPacket packet
-			if (name !== "worldBlockPlacedPacket") return true;
-			const { positions: positionsQ, layer: layerQ, blockId: blockIdQ, extraFields: extraFieldsQ } = value;
-			// 2. Look for matching block / layer
-			//    Add to positions, remove from queue (if less than 100 blocks in packet)
-			if (positionsQ.length < 100 && blockId === blockIdQ && layer === layerQ && extraFields.equals(extraFieldsQ)) {
-				for (const position of positionsQ) {
-					const hash = muxInt16(position.x, position.y);
-					if (!positionsHash.has(hash)) {
-						positionsHash.add(hash);
-						positions.push(position);
-						if (positionsQ.length >= 100)
-							break;
-					}
-				}
-				return false;
+	_workqueueSource(add) {
+		const MAXPOSITIONS = 100;
+		for (const [{ layer, block }, positions] of this._workqueue) {
+			const blockId = block.id;
+			const extraFields = block.serializeProperties();
+			if (positions.length > MAXPOSITIONS) {
+				for (let i = 0; i < positions.length; i += 100)
+					add("worldBlockPlacedPacket", {
+						isFillOperation: false,
+						positions: positions.slice(i, i + 100),
+						layer, blockId, extraFields
+					});
+			} else {
+				add("worldBlockPlacedPacket", {
+					isFillOperation: false,
+					positions, layer, blockId, extraFields
+				});
 			}
-			// 3. Look for matching positions (on same layer)
-			//    Remove them, if empty remove from queue
-			if (layer === layerQ) {
-				for (let i = 0; i < positionsQ.length; ++i) {
-					const { x, y } = positionsQ[i];
-					if (positionsHash.has(muxInt16(x, y))) {
-						positionsQ.splice(i, 1);
-						--i; // Adjust the index to check the next element after removal
-					}
-				}
-				return positionsQ.length > 0;
-			}
-
-			return true;
-		});
-		this.room.send("worldBlockPlacedPacket", {
-			isFillOperation: false,
-			positions, layer, blockId, extraFields
-		});
+		}
+		this._workqueue.clear();
+	}
+	_workqueueAdd(positions, layer, block) {
+		const key = { layer, block };
+		const positionsB = this._workqueue.get(key);
+		if (positionsB) {
+			// way faster to .push if under certain size
+			if (positions.length < 32) {
+				for (const position of positions)
+					positionsB.push(position);
+			} else
+				this._workqueue.set(key, positionsB.concat(positions));
+		} else
+			this._workqueue.set(key, positions);
+	}
+	setMany(positions, layer, block) {
+		this._workqueueAdd(positions, layer, block);
 		return block;
 	}
-	_setManyNow(positions, layer, block) {
+	setManyNow(positions, layer, block) {
 		const blockId = block.id;
 		const extraFields = block.serializeProperties();
-		const positionsHash = new Set(positions.map(({x, y}) => muxInt16(x, y)));
-		function pred({ name, value }) {
-			// For each pending packet
-			// 1. Ignore if not a worldBlockPlacedPacket packet
-			if (name !== "worldBlockPlacedPacket") return true;
-			const { positions: positionsQ, layer: layerQ, blockId: blockIdQ, extraFields: extraFieldsQ } = value;
-			// 2. Look for matching positions
-			//    Remove them, if empty remove from queue
-			for (let i = 0; i < positionsQ.length; ++i) {
-				const { x, y } = positionsQ[i];
-				if (positions.has(muxInt16(x, y))) {
-					positionsQ.splice(i, 1);
-					--i; // Adjust the index to check the next element after removal
-				}
-			}
-			return positionsQ.length > 0;
-		}
 		this.room.sendNow("worldBlockPlacedPacket", {
 			isFillOperation: false,
 			positions, layer, blockId, extraFields
@@ -141,12 +116,12 @@ export class World extends EventEmitter {
 	set(x, y, layer, block) {
 		const index = this.structure.index(x, y, layer);
 		if (!index) return;
-		return this._setMany([{ x, y }], layer, block);
+		return this.setMany([{ x, y }], layer, block);
 	}
 	setNow(x, y, layer, block) {
 		const index = this.structure.index(x, y, layer);
 		if (!index) return;
-		return this._setManyNow([{ x, y }], layer, block);
+		return this.setManyNow([{ x, y }], layer, block);
 	}
 	setSub(x1, y1, structure) {
 		for (let x = 0; x < structure.width; ++x) for (let y = 0; y < structure.height; ++y) for (let layer = 0; layer < structure.layers; ++layer) {
@@ -154,7 +129,6 @@ export class World extends EventEmitter {
 			if (!block) continue;
 			this.set(x1 + x, y1 + y, layer, block);
 		}
-		console.log("DONE")
 	}
 	setArea(x1, y1, x2, y2, layer, block) {
 		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)

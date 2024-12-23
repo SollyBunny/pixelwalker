@@ -3,7 +3,7 @@ import WebSocket from "ws";
 import { toBinary, fromBinary, create } from "@bufbuild/protobuf";
 import { WorldPacketSchema } from "./protocol/world_pb.js";
 
-import { WorkQueue } from "./workqueue.js";
+import { WorkQueue } from "./lib/workqueue.js";
 import { URLServerSocketGame } from "./endpoints.js"
 import { Chat } from "./components/chat.js";
 import { Players } from "./components/players.js";

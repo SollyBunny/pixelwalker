@@ -15,47 +15,40 @@ function int32ToRgba(int32) {
 
 export class Client {
 	static async fromLogin(identity, password, local) {
-		const res = await fetch(URLServerAPI(local) + "/api/collections/users/auth-with-password", {
-			"headers": {
-				"accept": "*/*",
-				"accept-language": "en-US",
-				"content-type": "application/json",
-				"priority": "u=1, i",
-				"sec-ch-ua": "\"Not?A_Brand\";v=\"99\", \"Chromium\";v=\"130\"",
-				"sec-ch-ua-mobile": "?0",
-				"sec-ch-ua-platform": "\"Linux\"",
-				"sec-fetch-dest": "empty",
-				"sec-fetch-mode": "cors",
-				"sec-fetch-site": "same-site",
-				"Referer": "https://client.pixelwalker.net/",
-				"Referrer-Policy": "strict-origin-when-cross-origin"
-			},
-			"body": JSON.stringify({ identity, password }),
-			"method": "POST"
-		});
-		const json = await res.json();
-		if (!json.token) {
-			if (json.message)
-				throw new Error(`Couldn't login: ${json.message}`);
-			else
-				throw new Error("Couldn't login: No token");
-		}
-		return new Client(json.record.id, json.token, local);
+		if (!identity)
+			throw new Error("Identity cannot be empty");
+		if (!password)
+			throw new Error("Password cannot be empty");
+		const client = new Client(local);
+		// may throw, TODO: clean up error message
+		await client.pocketbase.collection("users").authWithPassword(identity, password);
+		return client;
 	}
 	static fromToken(token, local) {
-		const id = jwtDecode(token).id;
-		if (!id)
-			throw new Error("Invalid token");
-		return new Client(id, token, local);
+		if (!token)
+			throw new Error("Token cannot be empty");
+		const client = new Client(local);
+		client.pocketbase.authStore.save(token, { verified: true });
+		return client;
 	}
-	constructor(id, token, local) {
-		this.id = id;
-		this.token = token;
+	constructor(local) {
 		this.local = Boolean(local);
 		this.pocketbase = new PocketBase(URLServerAPI(this.local));
-		this.pocketbase.authStore.save(this.token, { verified: true });
-		if (!this.pocketbase.authStore.isValid)
-			throw new Error("Invalid token");
+	}
+	get token() {
+		const token = this.pocketbase.authStore.token;
+		if (!token)
+			throw "No token";
+		return token;
+	}
+	get id() {
+		const token = this.pocketbase.authStore.token;
+		if (!token)
+			throw "No token";
+		const id = jwtDecode(token).id;
+		if (!id)
+			throw "Invalid token";
+		return id;
 	}
 	async roomTypes() {
 		if (!this._roomTypes) {

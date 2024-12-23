@@ -1,6 +1,6 @@
 import Sharp from "sharp";
 
-import { BufferReader, Types } from "./bufferreader.js";
+import { BufferReader, Types } from "../lib/bufferreader.js";
 
 export const LAYER_BACKGROUND = 0;
 export const LAYER_FOREGROUND = 1;
@@ -222,38 +222,82 @@ export class Structure {
 		if (Math.abs(width - height) <= 1)
 			width = height = maxsize;
 		const raw = await img.resize(width, height).raw().toBuffer();
-		const data = [];
+		const data = new Array(width * height * Structure.LAYER_COUNT);
+	
 		function bestColor(r, g, b) {
 			let best = "";
 			let bestDist = Infinity;
+			let bestColor = [0, 0, 0];
 			for (const [name, color] of Object.entries(colors)) {
-				if (color[3] === 0) continue;
+				if (color[3] === 0) continue; // Ignore fully transparent colors
 				const dist = Math.abs(r - color[0]) + Math.abs(g - color[1]) + Math.abs(b - color[2]);
 				if (dist < bestDist) {
 					best = name;
 					bestDist = dist;
+					bestColor = color;
 				}
 			}
-			return best;
+			return { name: best, color: bestColor };
 		}
-		for (let i = 0; i < raw.length; i += 3) {
-			const key = bestColor(raw[i], raw[i + 1], raw[i + 2]);
-			const block = Block.fromManager(manager, key);
-			if (!block) {
-				data.push(new Block());
-				data.push(new Block());
-				continue;
-			}
-			if (manager.name(block.id).indexOf("bg") === -1) {
-				data.push(new Block());
-				data.push(block);
-			} else {
-				data.push(block);
-				data.push(new Block());
+	
+		// Helper to clamp values between 0 and 255
+		function clamp(value) {
+			return Math.max(0, Math.min(255, value));
+		}
+	
+		// Floyd-Steinberg Dithering weights
+		const weights = [
+			{ x: 1, y: 0, factor: 7 / 16 },
+			{ x: -1, y: 1, factor: 3 / 16 },
+			{ x: 0, y: 1, factor: 5 / 16 },
+			{ x: 1, y: 1, factor: 1 / 16 }
+		];
+	
+		const errorBuffer = new Float32Array(raw.length); // Store accumulated errors
+	
+		for (let y = 0; y < height; ++y) {
+			for (let x = 0; x < width; ++x) {
+				const index = (y * width + x) * 3;
+				const r = clamp(raw[index] + errorBuffer[index]);
+				const g = clamp(raw[index + 1] + errorBuffer[index + 1]);
+				const b = clamp(raw[index + 2] + errorBuffer[index + 2]);
+	
+				const { name: key, color } = bestColor(r, g, b);
+				const block = Block.fromManager(manager, key);
+	
+				if (!block) continue; // Skip unknown blocks
+	
+				// Update the structure data
+				const dataIndex = (y * width + x) * 2;
+				if (manager.name(block.id).indexOf("bg") === -1) { // is foreground
+					data[dataIndex + 1] = block;
+				} else {
+					data[dataIndex] = block;
+					data[dataIndex + 1] = new Block();
+				}
+	
+				// Calculate quantization error
+				const errorR = r - color[0];
+				const errorG = g - color[1];
+				const errorB = b - color[2];
+	
+				// Distribute the error to neighboring pixels
+				for (const { x: dx, y: dy, factor } of weights) {
+					const nx = x + dx;
+					const ny = y + dy;
+					if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+						const nIndex = (ny * width + nx) * 3;
+						errorBuffer[nIndex] += errorR * factor;
+						errorBuffer[nIndex + 1] += errorG * factor;
+						errorBuffer[nIndex + 2] += errorB * factor;
+					}
+				}
 			}
 		}
+	
 		return new Structure(width, height, data);
 	}
+	
 	constructor(width, height, data) {
 		this.width = width;
 		this.height = height;

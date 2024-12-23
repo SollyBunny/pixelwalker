@@ -44,11 +44,11 @@ export class Players extends EventEmitter {
 			this.emit("join", { player });
 		});
 		this.room.on("playerLeftPacket", packet => {
-			this.emit("leave", { player: this.players.get(packet.playerId) });
+			this.emit("leave", { player: this.get(packet.playerId) });
 			this.players.delete(packet.playerId);
 		});
 		this.room.on("playerGodModePacket", packet => {
-			const player = this.players.get(packet.playerId);
+			const player = this.get(packet.playerId);
 			player.god = packet.enabled;
 			this.emit("god", { player: player });
 		});
