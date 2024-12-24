@@ -39,23 +39,23 @@ export class Room extends EventEmitter {
 			throw new Error("WebSocket is not open");
 		if (globalThis.process) {
 			// Cleanup on crash or other exit
-			const deconstructor = error => {
-				process.removeListener("uncaughtException", deconstructor);
-				process.removeListener("exit", deconstructor);
-				process.removeListener("SIGINT", deconstructor);
-				process.removeListener("SIGUSR1", deconstructor);
-				process.removeListener("SIGUSR2", deconstructor);
-				this.deconstructor();
+			const close = error => {
+				process.removeListener("uncaughtException", close);
+				process.removeListener("exit", close);
+				process.removeListener("SIGINT", close);
+				process.removeListener("SIGUSR1", close);
+				process.removeListener("SIGUSR2", close);
+				this.close();
 				if (typeof(error) === "string")
 					process.kill(process.pid, error)
 				if (error instanceof Error)
 					throw error;
 			};
-			process.on("uncaughtException", deconstructor);
-			process.on("exit", deconstructor);
-			process.on("SIGINT", deconstructor);
-			process.on("SIGUSR1", deconstructor);
-			process.on("SIGUSR2", deconstructor);
+			process.on("uncaughtException", close);
+			process.on("exit", close);
+			process.on("SIGINT", close);
+			process.on("SIGUSR1", close);
+			process.on("SIGUSR2", close);
 		}
 		this.client = client;
 		this.id = id;
@@ -75,7 +75,7 @@ export class Room extends EventEmitter {
 		};
 		this.addDefaultListeners();
 	}
-	deconstructor() {
+	close() {
 		if (!this.open) return;
 		this.open = false;
 		this.workqueue.close();
