@@ -1,2 +1,9 @@
-node_modules
 .env
+node_modules/.bin
+node_modules/sharp
+node_modules/color
+node_modules/color-convert
+node_modules/color-string
+node_modules/detect-libc
+node_modules/semvar
+
