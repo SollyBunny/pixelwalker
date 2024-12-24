@@ -60,7 +60,7 @@ export class Client {
 	async blockColorsMap() {
 		if (!this._blockColorsMap) {
 			const blockManager = await this.blockManager();
-			this._blockColorsMap = (await import("./blockColorsMap.json", { with: { type: "json" } })).default;
+			this._blockColorsMap = (await import("./blockColorsMap.js")).default;
 			this._blockColorsMap = Object.fromEntries(Object.entries(this._blockColorsMap).map(([name, color]) => {
 				return [blockManager.name(Number(name)), int32ToRgba(color)];
 			}));
