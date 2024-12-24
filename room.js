@@ -64,9 +64,7 @@ export class Room extends EventEmitter {
 		this.ws = ws;
 		this.workqueue = new WorkQueue(({ name, value }) => this.sendNow(name, value), 100);
 		this.ws.onclose = event => {
-			if (!this.open) return;
-			this.open = false;
-			this.emit("close", event);
+			this.close(event.reason);
 		};
 		this.ws.onmessage = async message => {
 			const packet = fromBinary(WorldPacketSchema, Buffer.from(message.data));
@@ -75,11 +73,12 @@ export class Room extends EventEmitter {
 		};
 		this.addDefaultListeners();
 	}
-	close() {
+	close(reason) {
 		if (!this.open) return;
 		this.open = false;
 		this.workqueue.close();
 		this.ws.close();
+		this.emit("close", reason ?? "Closed by client");
 	}
 	sendNow(name, value) {
 		const message = create(WorldPacketSchema, { packet: { case: name, value: value ?? {} } });
