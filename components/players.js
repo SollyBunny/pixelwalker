@@ -1,4 +1,4 @@
-import { EventEmitter } from "events";
+import { EventEmitter } from "../lib/eventemitter.js";
 
 export class Player {
 	static fromProperties(properties) {

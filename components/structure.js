@@ -1,7 +1,43 @@
-import Sharp from "sharp";
-
 import { BufferReader, Types } from "../lib/bufferreader.js";
 
+let Sharp;
+if (typeof document === "undefined")
+	Sharp = (await import("sharp")).default;
+
+async function imageDataFromBuffer(data, maxsize) {
+	if (Sharp) {
+		const img = (new Sharp(data)).rotate().toColorspace("rgb8");
+		const metadata = await img.metadata();
+		const scale = maxsize / Math.max(metadata.width, metadata.height);
+		let width = Math.round(metadata.width * scale);
+		let height = Math.round(metadata.height * scale);
+		if (Math.abs(width - height) <= 1)
+			width = height = maxsize;
+		return {
+			width, height,
+			channels: metadata.channels,
+			raw: await img.resize(width, height).raw().toBuffer()
+		};
+	} else {
+		const img = await createImageBitmap(new Blob([data]));
+		const canvas = document.createElement("canvas");
+		const ctx = canvas.getContext("2d", { alpha: false });
+		ctx.globalCompositeOperation = "copy";
+		const scale = maxsize / Math.max(img.width, img.height);
+		let width = Math.round(img.width * scale);
+		let height = Math.round(img.height * scale);
+		if (Math.abs(width - height) <= 1)
+			width = height = maxsize;
+		canvas.width = width;
+		canvas.height = height;
+		ctx.drawImage(img, 0, 0, width, height);
+		const raw = ctx.getImageData(0, 0, width, height).data;
+		return {
+			width, height, raw,
+			channels: raw.length / (width * height)
+		};
+	}
+}
 export const LAYER_BACKGROUND = 0;
 export const LAYER_FOREGROUND = 1;
 export const LAYER_COUNT = 2;
@@ -201,28 +237,20 @@ export class Block {
 
 export class Structure {
 	static fromBuffer(width, height, manager, buffer) {
-		const layers = LAYER_COUNT;
-		const data = new Array(width * height * layers);
+		const data = new Array(width * height * LAYER_COUNT);
 		buffer = BufferReader.from(buffer);
-		for (let i = 0; i < width * height * layers; ++i) {
+		for (let i = 0; i < width * height * LAYER_COUNT; ++i) {
 			const layer = Math.floor(i / (width * height));
 			const x = Math.floor((i % (width * height)) / height);
 			const y = i % height;
 			const block = Block.fromRaw(manager, buffer);
-			data[(y * width + x) * layers + layer] = block;
+			data[(y * width + x) * LAYER_COUNT + layer] = block;
 		}
 		return new Structure(width, height, data);
 	}
-	static async fromImage(manager, path, maxsize, colors) {
-		const img = Sharp(path).rotate().toColorspace("rgb8");
-		const metadata = await img.metadata();
-		const scale = maxsize / Math.max(metadata.width, metadata.height);
-		let width = Math.round(metadata.width * scale);
-		let height = Math.round(metadata.height * scale);
-		if (Math.abs(width - height) <= 1)
-			width = height = maxsize;
-		const raw = await img.resize(width, height).raw().toBuffer();
-		const data = new Array(width * height * Structure.LAYER_COUNT);
+	static async fromImage(buffer, maxsize, manager, colors) {
+		const { raw, channels, width, height } = await imageDataFromBuffer(buffer, maxsize);
+		const data = new Array(width * height * LAYER_COUNT);
 	
 		function bestColor(r, g, b) {
 			let best = "";
@@ -257,23 +285,23 @@ export class Structure {
 	
 		for (let y = 0; y < height; ++y) {
 			for (let x = 0; x < width; ++x) {
-				const index = (y * width + x) * 3;
-				const r = clamp(raw[index] + errorBuffer[index]);
-				const g = clamp(raw[index + 1] + errorBuffer[index + 1]);
-				const b = clamp(raw[index + 2] + errorBuffer[index + 2]);
+				const indexError = (y * width + x) * 3;
+				const indexRaw = (y * width + x) * channels;
+				const r = clamp(raw[indexRaw + 0] + errorBuffer[indexError + 0]);
+				const g = clamp(raw[indexRaw + 1] + errorBuffer[indexError + 1]);
+				const b = clamp(raw[indexRaw + 2] + errorBuffer[indexError + 2]);
 	
 				const { name: key, color } = bestColor(r, g, b);
 				const block = Block.fromManager(manager, key);
 	
 				if (!block) continue; // Skip unknown blocks
-	
-				// Update the structure data
-				const dataIndex = (y * width + x) * 2;
+
+				const indexData = (y * width + x) * LAYER_COUNT;
 				if (manager.name(block.id).indexOf("bg") === -1) { // is foreground
-					data[dataIndex + 1] = block;
+					data[indexData + LAYER_FOREGROUND] = block;
 				} else {
-					data[dataIndex] = block;
-					data[dataIndex + 1] = new Block();
+					data[indexData + LAYER_BACKGROUND] = block;
+					data[indexData + LAYER_FOREGROUND] = new Block();
 				}
 	
 				// Calculate quantization error
@@ -286,10 +314,10 @@ export class Structure {
 					const nx = x + dx;
 					const ny = y + dy;
 					if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-						const nIndex = (ny * width + nx) * 3;
-						errorBuffer[nIndex] += errorR * factor;
-						errorBuffer[nIndex + 1] += errorG * factor;
-						errorBuffer[nIndex + 2] += errorB * factor;
+						const indexError = (ny * width + nx) * 3;
+						errorBuffer[indexError + 0] += errorR * factor;
+						errorBuffer[indexError + 1] += errorG * factor;
+						errorBuffer[indexError + 2] += errorB * factor;
 					}
 				}
 			}
@@ -301,10 +329,9 @@ export class Structure {
 	constructor(width, height, data) {
 		this.width = width;
 		this.height = height;
-		this.layers = LAYER_COUNT;
 		this.data = data;
-		if (this.data.length !== this.width * this.height * this.layers)
-			throw new Error(`Data length does not match width, height, and layers (${this.data.length} != ${this.width * this.height * this.layers})`);
+		if (this.data.length !== this.width * this.height * LAYER_COUNT)
+			throw new Error(`Data length does not match width, height, and LAYER_COUNT (${this.data.length} != ${this.width * this.height * LAYER_COUNT})`);
 	}
 	empty() {
 		return this.data.every(block => block.empty());
@@ -318,25 +345,25 @@ export class Structure {
 		let trimTop, trimBottom, trimLeft, trimRight;
 		let x, y, layer;
 		loopTrimTop: for (trimTop = 0; trimTop < this.height; ++trimTop) {
-			for (x = 0; x < this.width; ++x) for (layer = 0; layer < this.layers; ++layer) {
+			for (x = 0; x < this.width; ++x) for (layer = 0; layer < LAYER_COUNT; ++layer) {
 				if (!this.get(x, trimTop, layer).empty())
 					break loopTrimTop;
 			}
 		}
 		loopTrimBottom: for (trimBottom = 0; trimBottom < this.height; ++trimBottom) {
-			for (x = 0; x < this.width; ++x) for (layer = 0; layer < this.layers; ++layer) {
+			for (x = 0; x < this.width; ++x) for (layer = 0; layer < LAYER_COUNT; ++layer) {
 				if (!this.get(x, this.height - 1 - trimBottom, layer).empty())
 					break loopTrimBottom;
 			}
 		}
 		loopTrimLeft: for (trimLeft = 0; trimLeft < this.width; ++trimLeft) {
-			for (y = 0; y < this.height; ++y) for (layer = 0; layer < this.layers; ++layer) {
+			for (y = 0; y < this.height; ++y) for (layer = 0; layer < LAYER_COUNT; ++layer) {
 				if (!this.get(trimLeft, y, layer).empty())
 					break loopTrimLeft;
 			}
 		}
 		loopTrimRight: for (trimRight = 0; trimRight < this.width; ++trimRight) {
-			for (y = 0; y < this.height; ++y) for (layer = 0; layer < this.layers; ++layer) {
+			for (y = 0; y < this.height; ++y) for (layer = 0; layer < LAYER_COUNT; ++layer) {
 				if (!this.get(this.width - 1 - trimRight, y, layer).empty())
 					break loopTrimRight;
 			}
@@ -344,9 +371,9 @@ export class Structure {
 		return this.getSub(trimLeft, trimTop, this.width - trimRight, this.height - trimBottom);
 	}
 	index(x, y, layer) {
-		if (x < 0 || x >= this.width || y < 0 || y >= this.height || layer < 0 || layer >= this.layers)
+		if (x < 0 || x >= this.width || y < 0 || y >= this.height || layer < 0 || layer >= LAYER_COUNT)
 			return undefined;
-		return (y * this.width + x) * this.layers + layer;
+		return (y * this.width + x) * LAYER_COUNT + layer;
 	}
 	get(x, y, layer) {
 		let index;
@@ -370,12 +397,12 @@ export class Structure {
 		const width = x2 - x1;
 		const height = y2 - y1;
 		const data = [];
-		for (let y = 0; y < height; ++y) for (let x = 0; x < width; ++x) for (let layer = 0; layer < this.layers; ++layer)
+		for (let y = 0; y < height; ++y) for (let x = 0; x < width; ++x) for (let layer = 0; layer < LAYER_COUNT; ++layer)
 			data.push(this.get(x + x1, y + y1, layer));
 		return new Structure(width, height, data);
 	}
 	setSub(x1, y1, structure) {
-		for (let y = 0; y < structure.height; ++y) for (let x = 0; x < structure.width; ++x) for (let layer = 0; layer < structure.layers; ++layer)
+		for (let y = 0; y < structure.height; ++y) for (let x = 0; x < structure.width; ++x) for (let layer = 0; layer < structure.LAYER_COUNT; ++layer)
 			this.set(x + x1, y + y1, layer, structure.get(x, y, layer));
 	}
 	setArea(x1, y1, x2, y2, layer, block) {

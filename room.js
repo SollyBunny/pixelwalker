@@ -1,22 +1,27 @@
-import { EventEmitter } from "events";
-import WebSocket from "ws";
 import { toBinary, fromBinary, create } from "@bufbuild/protobuf";
 import { WorldPacketSchema } from "./protocol/world_pb.js";
 
+import { EventEmitter } from "./lib/eventemitter.js";
 import { WorkQueue } from "./lib/workqueue.js";
 import { URLServerSocketGame } from "./endpoints.js"
 import { Chat } from "./components/chat.js";
 import { Players } from "./components/players.js";
 import { World } from "./components/world.js";
 
+let WebSocketClient;
+if (typeof document === "undefined")
+	WebSocketClient = (await import("ws")).WebSocket;
+else
+	WebSocketClient = globalThis.WebSocket;
+
 export class Room extends EventEmitter {
 	static async fromId(client, id, type) {
 		const token = await client.roomToken(id, type);
 		const url = `${URLServerSocketGame(client.local)}/room/${token}`;
 		function fnc() { return new Promise(resolve => {
-			const ws = new WebSocket(url);
+			const ws = new WebSocketClient(url);
 			ws.binaryType = "arraybuffer";
-			ws.on("unexpected-response", (request, response) => {
+			if (ws.on) ws.on("unexpected-response", (request, response) => {
 				let msg = response.statusMessage ?? "";
 				// if (response.statusCode == 404)
 				// 	msg += " (Probably updating)";
@@ -30,41 +35,44 @@ export class Room extends EventEmitter {
 	}
 	constructor(client, id, type, ws) {
 		super();
-		if (ws.readyState !== WebSocket.OPEN)
+		if (ws.readyState !== WebSocketClient.OPEN)
 			throw new Error("WebSocket is not open");
-		const deconstructor = error => {
-			process.removeListener("uncaughtException", deconstructor);
-			process.removeListener("exit", deconstructor);
-			process.removeListener("SIGINT", deconstructor);
-			process.removeListener("SIGUSR1", deconstructor);
-			process.removeListener("SIGUSR2", deconstructor);
-			this.deconstructor();
-			if (typeof(error) === "string")
-				process.kill(process.pid, error)
-			if (error instanceof Error)
-				throw error;
-		};
-		process.on("uncaughtException", deconstructor);
-		process.on("exit", deconstructor);
-		process.on("SIGINT", deconstructor);
-		process.on("SIGUSR1", deconstructor);
-		process.on("SIGUSR2", deconstructor);
+		if (globalThis.process) {
+			// Cleanup on crash or other exit
+			const deconstructor = error => {
+				process.removeListener("uncaughtException", deconstructor);
+				process.removeListener("exit", deconstructor);
+				process.removeListener("SIGINT", deconstructor);
+				process.removeListener("SIGUSR1", deconstructor);
+				process.removeListener("SIGUSR2", deconstructor);
+				this.deconstructor();
+				if (typeof(error) === "string")
+					process.kill(process.pid, error)
+				if (error instanceof Error)
+					throw error;
+			};
+			process.on("uncaughtException", deconstructor);
+			process.on("exit", deconstructor);
+			process.on("SIGINT", deconstructor);
+			process.on("SIGUSR1", deconstructor);
+			process.on("SIGUSR2", deconstructor);
+		}
 		this.client = client;
 		this.id = id;
 		this.type = type;
 		this.open = true;
 		this.ws = ws;
 		this.workqueue = new WorkQueue(({ name, value }) => this.sendNow(name, value), 100);
-		this.ws.on("close", (code, reason) => {
+		this.ws.onclose = event => {
 			if (!this.open) return;
 			this.open = false;
-			this.emit("close", { code, reason });
-		});
-		this.ws.on("message", async message => {
-			const packet = fromBinary(WorldPacketSchema, Buffer.from(message));
+			this.emit("close", event);
+		};
+		this.ws.onmessage = async message => {
+			const packet = fromBinary(WorldPacketSchema, Buffer.from(message.data));
 			// console.log(packet.packet.case, JSON.stringify(packet.packet.value ?? {}).slice(0, 100));
 			this.emit(packet.packet.case, packet.packet.value ?? {});
-		});
+		};
 		this.addDefaultListeners();
 	}
 	deconstructor() {
@@ -72,16 +80,6 @@ export class Room extends EventEmitter {
 		this.open = false;
 		this.workqueue.close();
 		this.ws.close();
-	}
-	async protobuf() {
-		if (!this._protobuf)
-			this._protobuf = await Protobuf.load("protocol/world.proto");
-		return this._protobuf;
-	}
-	async WorldPacketSchema() {
-		if (!this._WorldPacketSchema)
-			this._WorldPacketSchema = (await this.protobuf()).lookupType("WorldPacket");
-		return this._WorldPacketSchema;
 	}
 	sendNow(name, value) {
 		const message = create(WorldPacketSchema, { packet: { case: name, value: value ?? {} } });

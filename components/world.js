@@ -1,8 +1,7 @@
-import { EventEmitter } from "events";
-
-import { Structure, Block } from "./structure.js";
-
+import { EventEmitter } from "../lib/eventemitter.js";
 import { CustomMap, hash2 } from "../lib/custommap.js";
+
+import { Structure, Block, LAYER_COUNT } from "./structure.js";
 
 export class World extends EventEmitter {
 	constructor(room) {
@@ -124,7 +123,7 @@ export class World extends EventEmitter {
 		return this.setManyNow([{ x, y }], layer, block);
 	}
 	setSub(x1, y1, structure) {
-		for (let x = 0; x < structure.width; ++x) for (let y = 0; y < structure.height; ++y) for (let layer = 0; layer < structure.layers; ++layer) {
+		for (let x = 0; x < structure.width; ++x) for (let y = 0; y < structure.height; ++y) for (let layer = 0; layer < LAYER_COUNT; ++layer) {
 			const block = structure.get(x, y, layer);
 			if (!block) continue;
 			this.set(x1 + x, y1 + y, layer, block);
@@ -155,7 +154,7 @@ export class World extends EventEmitter {
 			resolve({ block, blockOld, x, y, layer });
 		};
 		rejectTimeout = setTimeout(() => {
-			this.removeListener("blockPlaced", blockPlacedEvent);
+			this.off("blockPlaced", blockPlacedEvent);
 			if (blockStr)
 				reject(new Error(`Block ${blockStr} not placed within ${timeout} seconds`));
 			else
