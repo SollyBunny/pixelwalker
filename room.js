@@ -15,28 +15,8 @@ else
 	WebSocketClient = globalThis.WebSocket;
 
 export class Room extends EventEmitter {
-	static async fromId(client, id, type) {
-		const token = await client.roomToken(id, type);
-		const url = `${URLServerSocketGame(client.local)}/room/${token}`;
-		function fnc() { return new Promise(resolve => {
-			const ws = new WebSocketClient(url);
-			ws.binaryType = "arraybuffer";
-			if (ws.on) ws.on("unexpected-response", (request, response) => {
-				let msg = response.statusMessage ?? "";
-				// if (response.statusCode == 404)
-				// 	msg += " (Probably updating)";
-				throw new Error(`Could not connect to ${request.method} ${request.host}: ${response.statusCode} ${msg}`);
-			});
-			ws.onopen = () => {
-				resolve(new Room(client, id, type, ws));
-			};
-		}); }
-		return fnc();
-	}
-	constructor(client, id, type, ws) {
+	constructor(client) {
 		super();
-		if (ws.readyState !== WebSocketClient.OPEN)
-			throw new Error("WebSocket is not open");
 		if (globalThis.process) {
 			// Cleanup on crash or other exit
 			const close = error => {
@@ -45,7 +25,11 @@ export class Room extends EventEmitter {
 				process.removeListener("SIGINT", close);
 				process.removeListener("SIGUSR1", close);
 				process.removeListener("SIGUSR2", close);
-				this.close();
+				try {
+					this.close();
+				} catch (e) {
+					console.log(e);
+				}
 				if (typeof(error) === "string")
 					process.kill(process.pid, error)
 				if (error instanceof Error)
@@ -58,38 +42,8 @@ export class Room extends EventEmitter {
 			process.on("SIGUSR2", close);
 		}
 		this.client = client;
-		this.id = id;
-		this.type = type;
-		this.open = true;
-		this.ws = ws;
-		this.workqueue = new WorkQueue(({ name, value }) => this.sendNow(name, value), 100);
-		this.ws.onclose = event => {
-			this.close(event.reason);
-		};
-		this.ws.onmessage = async message => {
-			const packet = fromBinary(WorldPacketSchema, Buffer.from(message.data));
-			// console.log(packet.packet.case, JSON.stringify(packet.packet.value ?? {}).slice(0, 100));
-			this.emit(packet.packet.case, packet.packet.value ?? {});
-		};
+		this.workqueue = new WorkQueue(({ name, value }) => this.sendNow(name, value), 300);
 		this.addDefaultListeners();
-	}
-	close(reason) {
-		if (!this.open) return;
-		this.open = false;
-		this.workqueue.close();
-		this.ws.close();
-		this.emit("close", reason ?? "Closed by client");
-	}
-	sendNow(name, value) {
-		const message = create(WorldPacketSchema, { packet: { case: name, value: value ?? {} } });
-		const buffer = toBinary(WorldPacketSchema, message);
-		this.ws.send(buffer);
-	}
-	sendFilter(pred) {
-		this.workqueue.filter(pred);
-	}
-	send(name, value) {
-		this.workqueue.push({ name, value });
 	}
 	addDefaultListeners() {
 		// Init
@@ -103,5 +57,57 @@ export class Room extends EventEmitter {
 		this.players = new Players(this);
 		this.chat = new Chat(this);
 		this.world = new World(this);
+	}
+	async connect(id, type) {
+		const token = await this.client.roomToken(id, type);
+		const url = `${URLServerSocketGame(this.client.local)}/room/${token}`;
+		this.ws = new WebSocketClient(url);
+		this.ws.binaryType = "arraybuffer";
+		await (() => new Promise((resolve, reject) => {
+			if (this.ws.on) this.ws.on("unexpected-response", (request, response) => {
+				let msg = response.statusMessage ?? "";
+				// if (response.statusCode == 404)
+				// 	msg += " (Probably updating)";
+				reject(new Error(`Could not connect to ${request.method} ${request.host}: ${response.statusCode} ${msg}`));
+			});
+			this.ws.onopen = resolve;
+		}))();
+		this.id = id;
+		this.type = type;
+		this.ws.onclose = event => this.close(event.reason);
+		this.ws.onmessage = message => {
+			const packet = fromBinary(WorldPacketSchema, Buffer.from(message.data));
+			// console.log(packet.packet.case, JSON.stringify(packet.packet.value ?? {}).slice(0, 100));
+			this.emit(packet.packet.case, packet.packet.value ?? {});
+		};
+		await (() => new Promise((resolve, reject) => {
+			this.once("close", reject);
+			this.once("playerInitPacket", resolve);
+		}))();
+		this.workqueue.start();
+	}
+	get open() {
+		return this.ws !== undefined && this.ws.readyState === WebSocket.OPEN;
+	}
+	close(reason) {
+		if (!this.ws) return;
+		if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+			this.ws.close();
+		this.ws = undefined;
+		this.workqueue.stop();
+		this.emit("close", reason ?? "Closed by client");
+	}
+	sendNow(name, value) {
+		if (!this.open) return;
+		const message = create(WorldPacketSchema, { packet: { case: name, value: value ?? {} } });
+		const buffer = toBinary(WorldPacketSchema, message);
+		this.ws.send(buffer);
+	}
+	sendFilter(pred) {
+		this.workqueue.filter(pred);
+	}
+	send(name, value) {
+		if (!this.open) return;
+		this.workqueue.push({ name, value });
 	}
 }
