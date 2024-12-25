@@ -29,13 +29,13 @@ export class Client {
 				// Get mappings
 				this.blockIds = await fetch(`${URLServerGame(this.local)}/mappings`);
 				this.blockIds = await this.blockIds.json();
-				// Create block manager
-				this.blockManager = new BlockManager(this, this.blockIds);
 				// Get color map
 				this.blockColors = (await import("./dataBlockColors.js")).default;
-				this.blockColors = Object.fromEntries(Object.entries(this.blockColors).map(([name, color]) =>
-					[this.blockManager.name(Number(name)), int32ToRgba(color)]
+				this.blockColors = new Map(Object.entries(this.blockColors).map(([id, color]) =>
+					[Number(id), int32ToRgba(color)]
 				));
+				// Create block manager
+				this.blockManager = new BlockManager(this);
 			})()
 		]);
 	}

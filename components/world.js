@@ -9,8 +9,8 @@ export class World extends EventEmitter {
 		this.room = room;
 		this.room.workqueue.sourceAdd(this._workqueueSource.bind(this));
 		this._workqueue = new CustomMap(
-			({ layer, block }) => hash2(layer, block.id),
-			({ layer: layerA, block: blockA }, { layer: layerB, block: blockB }) => layerA === layerB && blockA.equals(blockB)
+			block => hash2(block.layer, block.id),
+			(blockA, blockB) => blockA.equals(blockB)
 		);
 		this.addDefaultListeners();
 	}
@@ -20,20 +20,20 @@ export class World extends EventEmitter {
 			this.structure = Structure.fromBuffer(worldData, worldWidth, worldHeight, this.room.client.blockManager);
 			this._updateMeta(worldMeta);
 		});
-		this.room.on("worldMetaUpdatePacket", ({ meta })	 => {
+		this.room.on("worldMetaUpdatePacket", ({ meta }) => {
 			this._updateMeta(meta);
 		});
 		this.room.on("worldClearedPacket", async () => {
-			this.structure.setArea(0, 0, this.structure.width, this.structure.height, LAYER_BACKGROUND, new Block());
-			this.structure.setArea(1, 1, this.structure.width - 1, this.structure.height - 1, LAYER_FOREGROUND, new Block());
+			this.structure.setArea(0, 0, this.structure.width, this.structure.height, new Block(0, LAYER_BACKGROUND));
+			this.structure.setArea(1, 1, this.structure.width - 1, this.structure.height - 1, new Block(0, LAYER_FOREGROUND));
 			const block = Block.fromManager(this.room.client.blockManager, "basic_gray");
 			for (let x = 0; x < this.structure.width; ++x) {
-				this.structure.set(x, 0, LAYER_FOREGROUND, block);
-				this.structure.set(x, this.structure.height - 1, LAYER_FOREGROUND, block);
+				this.structure.set(x, 0, block);
+				this.structure.set(x, this.structure.height - 1, block);
 			}
 			for (let y = 1; y < this.structure.height - 1; ++y) {
-				this.structure.set(0, y, LAYER_FOREGROUND, block);
-				this.structure.set(this.structure.width - 1, y, LAYER_FOREGROUND, block);
+				this.structure.set(0, y, block);
+				this.structure.set(this.structure.width - 1, y, block);
 			}
 		});
 		this.room.on("worldBlockPlacedPacket", async packet => {
@@ -93,76 +93,74 @@ export class World extends EventEmitter {
 	}
 	_workqueueSource(add) {
 		const MAXPOSITIONS = 100;
-		for (const [{ layer, block }, positions] of this._workqueue) {
-			const blockId = block.id;
+		for (const [block, positions] of this._workqueue) {
 			const extraFields = block.serializeProperties();
 			if (positions.length > MAXPOSITIONS) {
 				for (let i = 0; i < positions.length; i += 100)
 					add("worldBlockPlacedPacket", {
 						isFillOperation: false,
 						positions: positions.slice(i, i + 100),
-						layer, blockId, extraFields
+						layer: block.layer, blockId: block.id, extraFields
 					});
 			} else {
 				add("worldBlockPlacedPacket", {
 					isFillOperation: false,
-					positions, layer, blockId, extraFields
+					positions,
+					layer: block.layer, blockId: block.id, extraFields
 				});
 			}
 		}
 		this._workqueue.clear();
 	}
-	_workqueueAdd(positions, layer, block) {
-		const key = { layer, block };
-		const positionsB = this._workqueue.get(key);
+	_workqueueAdd(positions, block) {
+		const positionsB = this._workqueue.get(block);
 		if (positionsB) {
 			// way faster to .push if under certain size
 			if (positions.length < 32) {
 				for (const position of positions)
 					positionsB.push(position);
 			} else
-				this._workqueue.set(key, positionsB.concat(positions));
+				this._workqueue.set(block, positionsB.concat(positions));
 		} else
-			this._workqueue.set(key, positions);
+			this._workqueue.set(block, positions);
 	}
-	setMany(positions, layer, block) {
+	setMany(positions, block) {
 		if (!block) return;
-		this._workqueueAdd(positions, layer, block);
+		this._workqueueAdd(positions, block);
 		return block;
 	}
-	setManyNow(positions, layer, block) {
+	setManyNow(positions, block) {
 		if (!block) return;
-		const blockId = block.id;
 		const extraFields = block.serializeProperties();
 		this.room.sendNow("worldBlockPlacedPacket", {
 			isFillOperation: false,
-			positions, layer, blockId, extraFields
+			positions, layer: block.layer, blockId: block.id, extraFields
 		});
 		return block;
 	}
-	set(x, y, layer, block) {
-		const index = this.structure.index(x, y, layer);
-		if (!index) return;
+	set(x, y, block) {
 		if (!block) return;
-		return this.setMany([{ x, y }], layer, block);
+		const index = this.structure.index(x, y, block.layer);
+		if (!index) return;
+		return this.setMany([{ x, y }], block);
 	}
-	setNow(x, y, layer, block) {
-		const index = this.structure.index(x, y, layer);
-		if (!index) return;
+	setNow(x, y, block) {
 		if (!block) return;
-		return this.setManyNow([{ x, y }], layer, block);
+		const index = this.structure.index(x, y, block.layer);
+		if (!index) return;
+		return this.setManyNow([{ x, y }], block);
 	}
 	setSub(x1, y1, structure) {
 		for (let x = 0; x < structure.width; ++x) for (let y = 0; y < structure.height; ++y) for (let layer = 0; layer < LAYER_COUNT; ++layer) {
 			const block = structure.get(x, y, layer);
 			if (!block) continue;
-			this.set(x1 + x, y1 + y, layer, block);
+			this.set(x1 + x, y1 + y, block);
 		}
 	}
-	setArea(x1, y1, x2, y2, layer, block) {
+	setArea(x1, y1, x2, y2, block) {
 		if (!block) return;
 		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)
-			this.set(x, y, layer, block);
+			this.set(x, y, block);
 	}
 	waitForBlockPlaced(player, blockStr, timeout) { return new Promise(async (resolve, reject) => {
 		timeout = timeout ?? 30;
@@ -175,13 +173,13 @@ export class World extends EventEmitter {
 			}
 		}
 		let rejectTimeout;
-		const blockPlacedEvent = ({ player: blockPlacedEventPLayer, block, blockOld, x, y, layer }) => {
+		const blockPlacedEvent = ({ player: blockPlacedEventPLayer, block, blockOld, x, y }) => {
 			if (player && player.id !== blockPlacedEventPLayer.id)
 				return;
 			if (id !== undefined && block.id !== id)
 				return;
 			clearTimeout(rejectTimeout);
-			resolve({ block, blockOld, x, y, layer });
+			resolve({ block, blockOld, x, y });
 		};
 		rejectTimeout = setTimeout(() => {
 			this.off("blockPlaced", blockPlacedEvent);
@@ -193,15 +191,15 @@ export class World extends EventEmitter {
 		this.on("blockPlaced", blockPlacedEvent);
 	}); }
 	async select(player, blockStr, timeout) {
-		let { x, y, layer, blockOld } = await this.waitForBlockPlaced(player, blockStr, timeout);
-		this.set(x, y, layer, blockOld);
-		return { x, y, layer, blockOld };
+		let { x, y, blockOld } = await this.waitForBlockPlaced(player, blockStr, timeout);
+		this.set(x, y, blockOld);
+		return { x, y, blockOld };
 	}
 	async selectSub(player, blockStr, timeout) {
 		this.room.chat.whisper(player, "Place 2 blocks to select rectangular region");
-		let { x: x1, y: y1, layer: layer1, blockOld: blockOld1 } = await this.select(player, blockStr, timeout);
+		let { x: x1, y: y1, blockOld: blockOld1 } = await this.select(player, blockStr, timeout);
 		this.room.chat.whisper(player, `Selected first position: ${x1}, ${y1}`);
-		let { x: x2, y: y2, layer: layer2, blockOld: blockOld2 } = await this.select(player, blockStr, timeout);
+		let { x: x2, y: y2, blockOld: blockOld2 } = await this.select(player, blockStr, timeout);
 		this.room.chat.whisper(player, `Selected second position: ${x2}, ${y2}`);
 		if (x1 > x2) {
 			const temp = x2;
@@ -219,6 +217,6 @@ export class World extends EventEmitter {
 		if (size === 0)
 			throw new Error("Region empty");
 		this.room.chat.whisper(player, `Selected region: ${x1}, ${y1} to ${x2}, ${y2}. Size: ${width}x${height} (${size} blocks)`);
-		return { x1, y1, x2, y2, width, height, size, layer1, blockOld1, layer2, blockOld2 };
+		return { x1, y1, x2, y2, width, height, size, blockOld1, blockOld2 };
 	}
 }

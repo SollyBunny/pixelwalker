@@ -42,46 +42,51 @@ export const LAYER_BACKGROUND = 0;
 export const LAYER_FOREGROUND = 1;
 export const LAYER_COUNT = 2;
 
+const specialBlocksNamed = {
+	"coin_gold_door": [{ name: "count", type: Types.Int32 }],
+	"coin_blue_door": [{ name: "count", type: Types.Int32 }],
+	"coin_gold_gate": [{ name: "count", type: Types.Int32 }],
+	"coin_blue_gate": [{ name: "count", type: Types.Int32 }],
+	"effects_jump_height": [{ name: "height", type: Types.Int32 }],
+	"effects_fly": [{ name: "enabled", type: Types.Boolean }],
+	"effects_speed": [{ name: "speed", type: Types.Int32 }],
+	"effects_invulnerability": [{ name: "enabled", type: Types.Boolean }],
+	"effects_curse": [{ name: "time", type: Types.Int32 }],
+	"effects_zombie": [{ name: "time", type: Types.Int32 }],
+	"effects_gravityforce": [{ name: "force", type: Types.Int32 }],
+	"effects_multi_jump": [{ name: "count", type: Types.Int32 }],
+	"tool_portal_world_spawn": [{ name: "id", type: Types.Int32 }],
+	"sign_normal": [{ name: "text", type: Types.String }],
+	"sign_red": [{ name: "text", type: Types.String }],
+	"sign_green": [{ name: "text", type: Types.String }],
+	"sign_blue": [{ name: "text", type: Types.String }],
+	"sign_gold": [{ name: "text", type: Types.String }],
+	"portal": [{ name: "from", type: Types.Int32 }, { name: "to", type: Types.Int32 }, { name: "rotation", type: Types.Int32 }],
+	"portal_invisible": [{ name: "from", type: Types.Int32 }, { name: "to", type: Types.Int32 }, { name: "rotation", type: Types.Int32 }],
+	"portal_world": [{ name: "worldId", type: Types.String }, { name: "spawnId", type: Types.Int32 }],
+	"switch_local_toggle": [{ name: "id", type: Types.Int32 }],
+	"switch_local_activator": [{ name: "id", type: Types.Int32 }, { name: "enabled", type: Types.Boolean }],
+	"switch_local_resetter": [{ name: "id", type: Types.Boolean }],
+	"switch_local_door": [{ name: "id", type: Types.Int32 }],
+	"switch_local_gate": [{ name: "id", type: Types.Int32 }],
+	"switch_global_toggle": [{ name: "id", type: Types.Int32 }],
+	"switch_global_activator": [{ name: "id", type: Types.Int32 }, { name: "enabled", type: Types.Boolean }],
+	"switch_global_resetter": [{ name: "id", type: Types.Boolean }],
+	"switch_global_door": [{ name: "id", type: Types.Int32 }],
+	"switch_global_gate": [{ name: "id", type: Types.Int32 }],
+	"hazard_death_door": [{ name: "count", type: Types.Int32 }],
+	"hazard_death_gate": [{ name: "count", type: Types.Int32 }],
+};
+
 export class BlockManager {
-	specialBlocks = {
-		"coin_gold_door": [{ name: "count", type: Types.Int32 }],
-		"coin_blue_door": [{ name: "count", type: Types.Int32 }],
-		"coin_gold_gate": [{ name: "count", type: Types.Int32 }],
-		"coin_blue_gate": [{ name: "count", type: Types.Int32 }],
-		"effects_jump_height": [{ name: "height", type: Types.Int32 }],
-		"effects_fly": [{ name: "enabled", type: Types.Boolean }],
-		"effects_speed": [{ name: "speed", type: Types.Int32 }],
-		"effects_invulnerability": [{ name: "enabled", type: Types.Boolean }],
-		"effects_curse": [{ name: "time", type: Types.Int32 }],
-		"effects_zombie": [{ name: "time", type: Types.Int32 }],
-		"effects_gravityforce": [{ name: "force", type: Types.Int32 }],
-		"effects_multi_jump": [{ name: "count", type: Types.Int32 }],
-		"tool_portal_world_spawn": [{ name: "id", type: Types.Int32 }],
-		"sign_normal": [{ name: "text", type: Types.String }],
-		"sign_red": [{ name: "text", type: Types.String }],
-		"sign_green": [{ name: "text", type: Types.String }],
-		"sign_blue": [{ name: "text", type: Types.String }],
-		"sign_gold": [{ name: "text", type: Types.String }],
-		"portal": [{ name: "from", type: Types.Int32 }, { name: "to", type: Types.Int32 }, { name: "rotation", type: Types.Int32 }],
-		"portal_invisible": [{ name: "from", type: Types.Int32 }, { name: "to", type: Types.Int32 }, { name: "rotation", type: Types.Int32 }],
-		"portal_world": [{ name: "worldId", type: Types.String }, { name: "spawnId", type: Types.Int32 }],
-		"switch_local_toggle": [{ name: "id", type: Types.Int32 }],
-		"switch_local_activator": [{ name: "id", type: Types.Int32 }, { name: "enabled", type: Types.Boolean }],
-		"switch_local_resetter": [{ name: "id", type: Types.Boolean }],
-		"switch_local_door": [{ name: "id", type: Types.Int32 }],
-		"switch_local_gate": [{ name: "id", type: Types.Int32 }],
-		"switch_global_toggle": [{ name: "id", type: Types.Int32 }],
-		"switch_global_activator": [{ name: "id", type: Types.Int32 }, { name: "enabled", type: Types.Boolean }],
-		"switch_global_resetter": [{ name: "id", type: Types.Boolean }],
-		"switch_global_door": [{ name: "id", type: Types.Int32 }],
-		"switch_global_gate": [{ name: "id", type: Types.Int32 }],
-		"hazard_death_door": [{ name: "count", type: Types.Int32 }],
-		"hazard_death_gate": [{ name: "count", type: Types.Int32 }],
-	}
-	constructor(client, name2id) {
+	constructor(client) {
 		this.client = client;
-		this.name2id = new Map(Object.entries(name2id));
-		this.id2name = new Map(Object.entries(name2id).map(([key, value]) => [value, key]));
+		const name2idEntries = Object.entries(client.blockIds);
+		this.name2id = new Map(name2idEntries);
+		this.id2name = new Map(name2idEntries.map(([name, id]) => [id, name]));
+		this.id2layer = new Map(name2idEntries.map(([name, id]) => [id, name.endsWith("_bg") ? LAYER_BACKGROUND : LAYER_FOREGROUND]));
+		this.id2types = new Map(Object.entries(specialBlocksNamed).map(([name, value]) => [this.id(name), value]));
+		this.id2color = client.blockColors;
 	}
 	id(name) {
 		return this.name2id.get(name);
@@ -89,22 +94,32 @@ export class BlockManager {
 	name(id) {
 		return this.id2name.get(id);
 	}
+	types(id) {
+		return this.id2types.get(id);
+	}
+	layer(id) {
+		return this.id2layer.get(id);
+	}
+	color(id) {
+		return this.id2color.get(id);
+	}
 }
 
 export class Block {
 	static fromManager(manager, key, properties) {
-		let name, id;
+		let id;
 		if (typeof(key) === "number") {
-			name = manager.name(key);
 			id = key;
 		} else {
-			name = key;
-			id = manager.id(key);
+			if (key === "empty")
+				return new Block(0, LAYER_FOREGROUND);
+			else if (key === "empty_bg")
+				return new Block(0, LAYER_FOREGROUND);
+			id = manager.name(key);
 		}
-		if (!properties)
-			properties = {};
-		const types = manager.specialBlocks[name];
+		const types = manager.types(id);
 		if (types) {
+			properties = properties ?? {};
 			for (const [name, type] of Object.entries(types)) {
 				if (properties[name] === undefined) {
 					switch (type) {
@@ -121,11 +136,11 @@ export class Block {
 				}
 			}
 		}
-		return new Block(id, types, properties);
+		return new Block(id, manager.layer(id), types, properties);
 	}
-	static fromRaw(manager, buffer) {
+	static fromRaw(layer, manager, buffer) {
 		const id = buffer.readInt32LE();
-		const types = manager.specialBlocks[manager.name(id)];
+		const types = manager.types(id);
 		let properties;
 		if (types) {
 			properties = {};
@@ -143,11 +158,11 @@ export class Block {
 				}
 			}
 		}
-		return new Block(id, types, properties);
+		return new Block(id, layer, types, properties);
 	}
 	static fromPacket(manager, packet) {
 		const id = packet.blockId;
-		const types = manager.specialBlocks[manager.name(id)];
+		const types = manager.types(id);
 		let properties;
 		if (types) {
 			const buffer = BufferReader.from(packet.extraFields);
@@ -171,15 +186,17 @@ export class Block {
 				}
 			}
 		}
-		return new Block(id, types, properties);
+		return new Block(id, packet.layer, types, properties);
 	}
-	constructor(id, types, properties) {
+	constructor(id, layer, types, properties) {
 		this.id = id ?? 0;
+		this.layer = layer ?? LAYER_BACKGROUND;
 		this.types = types;
 		this.properties = properties;
 	}
 	equals(other) {
 		if (this.id !== other.id) return false;
+		if (this.layer !== other.layer) return false;
 		if (this.types !== other.types) return false;
 		if (this.types) {
 			for (const { name, type: _type } of this.types) {
@@ -225,7 +242,7 @@ export class Block {
 		return out.buffer;
 	}
 	clone() {
-		return new Block(this.id, this.types, this.properties ? Object.assign({}, this.properties) : undefined);
+		return new Block(this.id, this.layer, this.types, this.properties ? Object.assign({}, this.properties) : undefined);
 	}
 	empty() {
 		return this.id === 0;
@@ -240,7 +257,7 @@ export class Structure {
 			const layer = Math.floor(i / (width * height));
 			const x = Math.floor((i % (width * height)) / height);
 			const y = i % height;
-			const block = Block.fromRaw(manager, buffer);
+			const block = Block.fromRaw(layer, manager, buffer);
 			data[(y * width + x) * LAYER_COUNT + layer] = block;
 		}
 		return new Structure(width, height, data);
@@ -248,12 +265,13 @@ export class Structure {
 	static async fromImage(buffer, maxsize, manager, colors) {
 		const { raw, channels, width, height } = await imageDataFromBuffer(buffer, maxsize);
 		const data = new Array(width * height * LAYER_COUNT);
+		colors = colors ?? manager.id2color;
 	
 		function bestColor(r, g, b) {
 			let best = "";
 			let bestDist = Infinity;
 			let bestColor = [0, 0, 0];
-			for (const [name, color] of Object.entries(colors)) {
+			for (const [name, color] of colors.entries()) {
 				if (color[3] === 0) continue; // Ignore fully transparent colors
 				const dist = Math.abs(r - color[0]) + Math.abs(g - color[1]) + Math.abs(b - color[2]);
 				if (dist < bestDist) {
@@ -262,7 +280,7 @@ export class Structure {
 					bestColor = color;
 				}
 			}
-			return { name: best, color: bestColor };
+			return { id: best, color: bestColor };
 		}
 	
 		// Helper to clamp values between 0 and 255
@@ -288,17 +306,16 @@ export class Structure {
 				const g = clamp(raw[indexRaw + 1] + errorBuffer[indexError + 1]);
 				const b = clamp(raw[indexRaw + 2] + errorBuffer[indexError + 2]);
 	
-				const { name: key, color } = bestColor(r, g, b);
-				const block = Block.fromManager(manager, key);
-	
+				const { id, color } = bestColor(r, g, b);
+				const block = Block.fromManager(manager, id);
 				if (!block) continue; // Skip unknown blocks
 
 				const indexData = (y * width + x) * LAYER_COUNT;
-				if (manager.name(block.id).indexOf("bg") === -1) { // is foreground
+				if (block.layer === LAYER_FOREGROUND) {
 					data[indexData + LAYER_FOREGROUND] = block;
 				} else {
 					data[indexData + LAYER_BACKGROUND] = block;
-					data[indexData + LAYER_FOREGROUND] = new Block();
+					data[indexData + LAYER_FOREGROUND] = new Block(0, LAYER_FOREGROUND);
 				}
 	
 				// Calculate quantization error
@@ -380,15 +397,10 @@ export class Structure {
 			index = this.index(x, y, layer);
 		return index === undefined ? undefined : this.data[index];
 	}
-	set(x, y, layer, block) {
-		let index;
-		if (layer === undefined) {
-			index = x;
-			block = y;
-		} else {
-			index = this.index(x, y, layer);
-		}
-		return index === undefined ? undefined : this.data[index] = block.clone();
+	set(x, y, block) {
+		const index = this.index(x, y, block.layer);
+		if (!index) return;
+		return this.data[index] = block.clone();
 	}
 	getSub(x1, y1, x2, y2) {
 		const width = x2 - x1;
@@ -400,10 +412,10 @@ export class Structure {
 	}
 	setSub(x1, y1, structure) {
 		for (let y = 0; y < structure.height; ++y) for (let x = 0; x < structure.width; ++x) for (let layer = 0; layer < structure.LAYER_COUNT; ++layer)
-			this.set(x + x1, y + y1, layer, structure.get(x, y, layer));
+			this.set(x + x1, y + y1, structure.get(x, y, layer));
 	}
-	setArea(x1, y1, x2, y2, layer, block) {
+	setArea(x1, y1, x2, y2, block) {
 		for (let y = y1; y < y2; ++y) for (let x = x1; x < x2; ++x)
-			this.set(x, y, layer, block.clone());
+			this.set(x, y, block.clone());
 	}
 }
