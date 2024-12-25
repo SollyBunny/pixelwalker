@@ -359,28 +359,28 @@ export class Structure {
 		let x, y, layer;
 		loopTrimTop: for (trimTop = 0; trimTop < this.height; ++trimTop) {
 			for (x = 0; x < this.width; ++x) for (layer = 0; layer < LAYER_COUNT; ++layer) {
-				if (!this.get(x, trimTop, layer).empty())
-					break loopTrimTop;
+				const block = this.get(x, trimTop, layer);
+				if (block && !block.empty()) break loopTrimTop;
 			}
 		}
 		if (trimTop >= this.height)
 			return new Structure(0, 0, []);
 		loopTrimBottom: for (trimBottom = 0; trimBottom < this.height; ++trimBottom) {
 			for (x = 0; x < this.width; ++x) for (layer = 0; layer < LAYER_COUNT; ++layer) {
-				if (!this.get(x, this.height - 1 - trimBottom, layer).empty())
-					break loopTrimBottom;
+				const block = this.get(x, this.height - 1 - trimBottom, layer);
+				if (block && !block.empty()) break loopTrimBottom;
 			}
 		}
 		loopTrimLeft: for (trimLeft = 0; trimLeft < this.width; ++trimLeft) {
 			for (y = 0; y < this.height; ++y) for (layer = 0; layer < LAYER_COUNT; ++layer) {
-				if (!this.get(trimLeft, y, layer).empty())
-					break loopTrimLeft;
+				const block = this.get(trimLeft, y, layer);
+				if (block && !block.empty()) break loopTrimLeft;
 			}
 		}
 		loopTrimRight: for (trimRight = 0; trimRight < this.width; ++trimRight) {
 			for (y = 0; y < this.height; ++y) for (layer = 0; layer < LAYER_COUNT; ++layer) {
-				if (!this.get(this.width - 1 - trimRight, y, layer).empty())
-					break loopTrimRight;
+				const block = this.get(this.width - 1 - trimRight, y, layer);
+				if (block && !block.empty()) break loopTrimRight;
 			}
 		}
 		return this.getSub(trimLeft, trimTop, this.width - trimRight, this.height - trimBottom);
@@ -391,12 +391,9 @@ export class Structure {
 		return (y * this.width + x) * LAYER_COUNT + layer;
 	}
 	get(x, y, layer) {
-		let index;
-		if (y === undefined)
-			index = x;
-		else
-			index = this.index(x, y, layer);
-		return index === undefined ? undefined : this.data[index];
+		const index = this.index(x, y, layer);
+		if (!index) return;
+		return this.data[index];
 	}
 	set(x, y, block) {
 		const index = this.index(x, y, block.layer);
