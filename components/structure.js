@@ -409,11 +409,15 @@ export class Structure {
 		return new Structure(width, height, data);
 	}
 	setSub(x1, y1, structure) {
-		for (let y = 0; y < structure.height; ++y) for (let x = 0; x < structure.width; ++x) for (let layer = 0; layer < structure.LAYER_COUNT; ++layer)
-			this.set(x + x1, y + y1, structure.get(x, y, layer));
+		for (let x = 0; x < structure.width; ++x) for (let y = 0; y < structure.height; ++y) for (let layer = 0; layer < LAYER_COUNT; ++layer) {
+			const block = structure.get(x, y, layer);
+			if (!block) continue;
+			this.set(x1 + x, y1 + y, block);
+		}
 	}
 	setArea(x1, y1, x2, y2, block) {
-		for (let y = y1; y < y2; ++y) for (let x = x1; x < x2; ++x)
-			this.set(x, y, block.clone());
+		if (!block) return;
+		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)
+			this.set(x, y, block);
 	}
 }

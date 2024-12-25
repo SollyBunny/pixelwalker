@@ -77,21 +77,6 @@ export class World extends EventEmitter {
 			throw "Invalid visiblity level";
 		this.room.chat.send(`/visibility ${visibility}`);
 	}
-	get width() {
-		return this.structure.width;
-	}
-	get height() {
-		return this.structure.height;
-	}
-	index(x, y, layer) {
-		return this.structure.index(x, y, layer);
-	}
-	get(x, y, layer) {
-		return this.structure.get(x, y, layer);
-	}
-	getSub(x1, y1, x2, y2) {
-		return this.structure.getSub(x1, y1, x2, y2);
-	}
 	_workqueueSource(add) {
 		const MAXPOSITIONS = 200;
 		for (const [block, positions] of this._workqueue) {
@@ -151,18 +136,6 @@ export class World extends EventEmitter {
 		if (!index) return;
 		return this.setManyNow([{ x, y }], block);
 	}
-	setSub(x1, y1, structure) {
-		for (let x = 0; x < structure.width; ++x) for (let y = 0; y < structure.height; ++y) for (let layer = 0; layer < LAYER_COUNT; ++layer) {
-			const block = structure.get(x, y, layer);
-			if (!block) continue;
-			this.set(x1 + x, y1 + y, block);
-		}
-	}
-	setArea(x1, y1, x2, y2, block) {
-		if (!block) return;
-		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)
-			this.set(x, y, block);
-	}
 	waitForBlockPlaced(player, blockStr, timeout) { return new Promise(async (resolve, reject) => {
 		timeout = timeout ?? 30;
 		let id;
@@ -221,4 +194,12 @@ export class World extends EventEmitter {
 		this.room.chat.whisper(player, `Selected region: ${x1}, ${y1} to ${x2}, ${y2}. Size: ${width}x${height} (${size} blocks)`);
 		return { x1, y1, x2, y2, width, height, size, blockOld1, blockOld2 };
 	}
+	// From structure
+	get width() { return this.structure.width; }
+	get height() { return this.structure.height; }
+	index(x, y, layer) { return this.structure.index(x, y, layer); }
+	get(x, y, layer) { return this.structure.get(x, y, layer); }
+	getSub(x1, y1, x2, y2) { return this.structure.getSub(x1, y1, x2, y2); }
+	setSub(x1, y1, structure) { return this.structure.setSub(x1, y1, structure); }
+	setArea(x1, y1, x2, y2, block) { return this.structure.setArea(x1, y1, x2, y2, block); }
 }
