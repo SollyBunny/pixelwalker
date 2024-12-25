@@ -339,7 +339,6 @@ export class Structure {
 	
 		return new Structure(width, height, data);
 	}
-	
 	constructor(width, height, data) {
 		this.width = width;
 		this.height = height;
@@ -364,6 +363,8 @@ export class Structure {
 					break loopTrimTop;
 			}
 		}
+		if (trimTop >= this.height)
+			return new Structure(0, 0, []);
 		loopTrimBottom: for (trimBottom = 0; trimBottom < this.height; ++trimBottom) {
 			for (x = 0; x < this.width; ++x) for (layer = 0; layer < LAYER_COUNT; ++layer) {
 				if (!this.get(x, this.height - 1 - trimBottom, layer).empty())
