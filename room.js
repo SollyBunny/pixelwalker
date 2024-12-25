@@ -28,7 +28,7 @@ export class Room extends EventEmitter {
 				try {
 					this.close();
 				} catch (e) {
-					console.log(e);
+					console.error(e);
 				}
 				if (typeof(error) === "string")
 					process.kill(process.pid, error)
