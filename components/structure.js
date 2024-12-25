@@ -347,7 +347,7 @@ export class Structure {
 			throw new Error(`Data length does not match width, height, and LAYER_COUNT (${this.data.length} != ${this.width * this.height * LAYER_COUNT})`);
 	}
 	empty() {
-		return this.data.every(block => block.empty());
+		return this.data.every(block => block && block.empty());
 	}
 	clone() {
 		return new Structure(this.width, this.height, [...this.data])
