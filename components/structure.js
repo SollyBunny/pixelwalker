@@ -78,9 +78,6 @@ export class BlockManager {
 		"hazard_death_door": [{ name: "count", type: Types.Int32 }],
 		"hazard_death_gate": [{ name: "count", type: Types.Int32 }],
 	}
-	static async fromClient(client) {
-		return new BlockManager(client, await client.blockMappings());
-	}
 	constructor(client, name2id) {
 		this.client = client;
 		this.name2id = new Map(Object.entries(name2id));
@@ -236,7 +233,7 @@ export class Block {
 }
 
 export class Structure {
-	static fromBuffer(width, height, manager, buffer) {
+	static fromBuffer(buffer, width, height, manager) {
 		const data = new Array(width * height * LAYER_COUNT);
 		buffer = BufferReader.from(buffer);
 		for (let i = 0; i < width * height * LAYER_COUNT; ++i) {

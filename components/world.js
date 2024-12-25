@@ -17,7 +17,7 @@ export class World extends EventEmitter {
 	addDefaultListeners() {
 		this.room.on("playerInitPacket", async ({ globalSwitchState, worldWidth, worldHeight, worldData, worldMeta }) => {
 			this.globalSwitches = Uint8Array.from(globalSwitchState);
-			this.structure = Structure.fromBuffer(worldWidth, worldHeight, await this.room.client.blockManager(), worldData);
+			this.structure = Structure.fromBuffer(worldData, worldWidth, worldHeight, this.room.client.blockManager);
 			this._updateMeta(worldMeta);
 		});
 		this.room.on("worldMetaUpdatePacket", ({ meta })	 => {
@@ -26,7 +26,7 @@ export class World extends EventEmitter {
 		this.room.on("worldClearedPacket", async () => {
 			this.structure.setArea(0, 0, this.structure.width, this.structure.height, LAYER_BACKGROUND, new Block());
 			this.structure.setArea(1, 1, this.structure.width - 1, this.structure.height - 1, LAYER_FOREGROUND, new Block());
-			const block = Block.fromManager(await this.room.client.blockManager(), "basic_gray");
+			const block = Block.fromManager(this.room.client.blockManager, "basic_gray");
 			for (let x = 0; x < this.structure.width; ++x) {
 				this.structure.set(x, 0, LAYER_FOREGROUND, block);
 				this.structure.set(x, this.structure.height - 1, LAYER_FOREGROUND, block);
@@ -38,7 +38,7 @@ export class World extends EventEmitter {
 		});
 		this.room.on("worldBlockPlacedPacket", async packet => {
 			const { layer, playerId } = packet;
-			const block = Block.fromPacket(await this.room.client.blockManager(), packet);
+			const block = Block.fromPacket(this.room.client.blockManager, packet);
 			const player = this.room.players.get(playerId);
 			if (packet.positions[0] === undefined)
 				packet.positions = [packet.positions];
@@ -168,7 +168,7 @@ export class World extends EventEmitter {
 		timeout = timeout ?? 30;
 		let id;
 		if (blockStr !== undefined) {
-			id = (await this.room.client.blockManager()).id(blockStr);
+			id = this.room.client.blockManager.id(blockStr);
 			if (id === undefined) {
 				reject(new Error(`Invalid block string ${blockStr}`));
 				return;
