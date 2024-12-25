@@ -44,7 +44,7 @@ export class World extends EventEmitter {
 				packet.positions = [packet.positions];
 			for (const { x, y } of packet.positions) {
 				this.emit("blockPlaced", { player, block, x, y, blockOld: this.structure.get(x, y, layer), allPositions: packet.positions });
-				this.structure.set(x, y, layer, block);
+				this.structure.set(x, y, block);
 			}
 			this.emit("blockPlacedGroup", { player, block, positions: packet.positions });
 		});
