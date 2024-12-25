@@ -115,7 +115,7 @@ export class Block {
 				return new Block(0, LAYER_FOREGROUND);
 			else if (key === "empty_bg")
 				return new Block(0, LAYER_FOREGROUND);
-			id = manager.name(key);
+			id = manager.id(key);
 		}
 		const types = manager.types(id);
 		if (types) {
