@@ -20,10 +20,10 @@ export class Chat extends EventEmitter {
 		this.room.send("playerChatPacket", { message });
 	}
 	whisper(player, message) {
-		if (player.id === this.room.players.self.id || player.name === this.room.players.self.name) {
+		if (player.id === this.room.players.self.id) {
 			this.send(message);
 		} else {
-			this.send(`/dm ${player.name} ${message}`);
+			this.send(`/dm #${player.id} ${message}`);
 		}
 	}
 }
