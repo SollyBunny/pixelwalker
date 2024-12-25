@@ -1,7 +1,7 @@
 import { EventEmitter } from "../lib/eventemitter.js";
 import { CustomMap, hash2 } from "../lib/custommap.js";
 
-import { Structure, Block, LAYER_COUNT } from "./structure.js";
+import { Structure, Block, LAYER_COUNT, LAYER_FOREGROUND, LAYER_BACKGROUND } from "./structure.js";
 
 export class World extends EventEmitter {
 	constructor(room) {
@@ -15,40 +15,66 @@ export class World extends EventEmitter {
 		this.addDefaultListeners();
 	}
 	addDefaultListeners() {
-		this.room.on("playerInitPacket", async packet => {
-			this.globalSwitches = Uint8Array.from(packet.globalSwitchState);
-			this.structure = Structure.fromBuffer(packet.worldWidth, packet.worldHeight, await this.room.client.blockManager(), packet.worldData);
+		this.room.on("playerInitPacket", async ({ globalSwitchState, worldWidth, worldHeight, worldData, worldMeta }) => {
+			this.globalSwitches = Uint8Array.from(globalSwitchState);
+			this.structure = Structure.fromBuffer(worldWidth, worldHeight, await this.room.client.blockManager(), worldData);
+			this._updateMeta(worldMeta);
+		});
+		this.room.on("worldMetaUpdatePacket", ({ meta })	 => {
+			this._updateMeta(meta);
+		});
+		this.room.on("worldClearedPacket", async () => {
+			this.structure.setArea(0, 0, this.structure.width, this.structure.height, LAYER_BACKGROUND, new Block());
+			this.structure.setArea(1, 1, this.structure.width - 1, this.structure.height - 1, LAYER_FOREGROUND, new Block());
+			const block = Block.fromManager(await this.room.client.blockManager(), "basic_gray");
+			for (let x = 0; x < this.structure.width; ++x) {
+				this.structure.set(x, 0, LAYER_FOREGROUND, block);
+				this.structure.set(x, this.structure.height - 1, LAYER_FOREGROUND, block);
+			}
+			for (let y = 1; y < this.structure.height - 1; ++y) {
+				this.structure.set(0, y, LAYER_FOREGROUND, block);
+				this.structure.set(this.structure.width - 1, y, LAYER_FOREGROUND, block);
+			}
 		});
 		this.room.on("worldBlockPlacedPacket", async packet => {
+			const { layer, playerId } = packet;
 			const block = Block.fromPacket(await this.room.client.blockManager(), packet);
-			const player = this.room.players.get(packet.playerId);
-			block.player = player;
+			const player = this.room.players.get(playerId);
 			if (packet.positions[0] === undefined)
 				packet.positions = [packet.positions];
-			for (const { x, y } of packet.positions)
-				this.emit("blockPlaced", { player, block, x, y, layer: packet.layer });
-			this.emit("blockPlacedFinish", { player, block, positions: packet.positions, layer: packet.layer });
-		});
-		this.on("blockPlacedFinish", ({ block, positions, layer }) => {
-			for (const { x, y } of positions)
+			for (const { x, y } of packet.positions) {
+				this.emit("blockPlaced", { player, block, x, y, layer, blockOld: this.structure.get(x, y, layer), allPositions: packet.positions });
 				this.structure.set(x, y, layer, block);
+			}
 		});
 		this.room.on("globalSwitchChangedPacket", ({ switchId, enabled, playerId }) => {
-			const data = { player: this.room.players.get(playerId), id: switchId, enabled };
-			this.emit("globalSwitch", data);
-			this.emit("globalSwitchFinish", data);
-		});
-		this.on("globalSwitchFinish", ({ id, enabled }) => {
+			this.emit("globalSwitch", { player: this.room.players.get(playerId), id: switchId, enabled, enabledOld: this.globalSwitches[id] });
 			this.globalSwitches[id] = enabled;
 		});
 		this.room.on("globalSwitch", ({ enabled, playerId }) => {
-			data = { player: this.room.players.get(playerId), enabled };
-			this.emit("globalSwitchReset", data);
-			this.emit("globalSwitchResetFinish", data);
-		});
-		this.on("globalSwitchResetFinish", ({ enabled }) => {
+			this.emit("globalSwitchReset", { player: this.room.players.get(playerId), enabled, enabledOld: Uint8Array.from(this.globalSwitches) });
 			this.globalSwitches.fill(enabled);
 		});
+	}
+	_updateMeta(meta) {
+		this.title = meta.title;
+		this.plays = meta.plays;
+		this.description = meta.description;
+		this.ownerName = meta.owner;
+		this.ownerRole = meta.ownerRole;
+		this.visibility = meta.visibility;
+		this.worldType = meta.worldType;
+		this.hasUnsavedChanges = meta.hasUnsavedChanges;
+		this.minimapEnabled = meta.minimapEnabled;
+		this.emit("meta");
+	}
+	setTitle(title) {
+		this.room.chat.send(`/title ${title}`);
+	}
+	setVisibility(visibility) {
+		if (["public", "unlisted", "friends", "private"].indexOf(visibility) === -1)
+			throw "Invalid visiblity level";
+		this.room.chat.send(`/visibility ${visibility}`);
 	}
 	get width() {
 		return this.structure.width;
@@ -100,10 +126,12 @@ export class World extends EventEmitter {
 			this._workqueue.set(key, positions);
 	}
 	setMany(positions, layer, block) {
+		if (!block) return;
 		this._workqueueAdd(positions, layer, block);
 		return block;
 	}
 	setManyNow(positions, layer, block) {
+		if (!block) return;
 		const blockId = block.id;
 		const extraFields = block.serializeProperties();
 		this.room.sendNow("worldBlockPlacedPacket", {
@@ -115,11 +143,13 @@ export class World extends EventEmitter {
 	set(x, y, layer, block) {
 		const index = this.structure.index(x, y, layer);
 		if (!index) return;
+		if (!block) return;
 		return this.setMany([{ x, y }], layer, block);
 	}
 	setNow(x, y, layer, block) {
 		const index = this.structure.index(x, y, layer);
 		if (!index) return;
+		if (!block) return;
 		return this.setManyNow([{ x, y }], layer, block);
 	}
 	setSub(x1, y1, structure) {
@@ -130,6 +160,7 @@ export class World extends EventEmitter {
 		}
 	}
 	setArea(x1, y1, x2, y2, layer, block) {
+		if (!block) return;
 		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)
 			this.set(x, y, layer, block);
 	}
@@ -144,13 +175,12 @@ export class World extends EventEmitter {
 			}
 		}
 		let rejectTimeout;
-		const blockPlacedEvent = ({ player: blockPlacedEventPLayer, block, x, y, layer }) => {
+		const blockPlacedEvent = ({ player: blockPlacedEventPLayer, block, blockOld, x, y, layer }) => {
 			if (player && player.id !== blockPlacedEventPLayer.id)
 				return;
 			if (id !== undefined && block.id !== id)
 				return;
 			clearTimeout(rejectTimeout);
-			const blockOld = this.get(x, y, layer);
 			resolve({ block, blockOld, x, y, layer });
 		};
 		rejectTimeout = setTimeout(() => {
