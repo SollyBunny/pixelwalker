@@ -43,9 +43,10 @@ export class World extends EventEmitter {
 			if (packet.positions[0] === undefined)
 				packet.positions = [packet.positions];
 			for (const { x, y } of packet.positions) {
-				this.emit("blockPlaced", { player, block, x, y, layer, blockOld: this.structure.get(x, y, layer), allPositions: packet.positions });
+				this.emit("blockPlaced", { player, block, x, y, blockOld: this.structure.get(x, y, layer), allPositions: packet.positions });
 				this.structure.set(x, y, layer, block);
 			}
+			this.emit("blockPlacedGroup", { player, block, positions: packet.positions });
 		});
 		this.room.on("globalSwitchChangedPacket", ({ switchId, enabled, playerId }) => {
 			this.emit("globalSwitch", { player: this.room.players.get(playerId), id: switchId, enabled, enabledOld: this.globalSwitches[id] });
@@ -92,7 +93,7 @@ export class World extends EventEmitter {
 		return this.structure.getSub(x1, y1, x2, y2);
 	}
 	_workqueueSource(add) {
-		const MAXPOSITIONS = 100;
+		const MAXPOSITIONS = 200;
 		for (const [block, positions] of this._workqueue) {
 			const extraFields = block.serializeProperties();
 			if (positions.length > MAXPOSITIONS) {
@@ -178,6 +179,7 @@ export class World extends EventEmitter {
 				return;
 			if (id !== undefined && block.id !== id)
 				return;
+			this.off("blockPlaced", blockPlacedEvent);
 			clearTimeout(rejectTimeout);
 			resolve({ block, blockOld, x, y });
 		};
