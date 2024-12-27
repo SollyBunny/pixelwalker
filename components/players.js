@@ -29,6 +29,22 @@ export class Player {
 		this.id = id;
 		this.position = { x: 1, y: 1 };
 		this.velocity = { x: 0, y: 0 };
+		this.lastMovedTime = performance.now();
+		this.afk = false;
+	}
+	get worldPosition() {
+		return { x: this.position.x / 16, y: this.position.y / 16 };
+	}
+	setAfk(afk) {
+		if (this.afk === afk)
+			return;
+		this.afk = afk;
+		if (this.afk) {
+			this.room.chat.whisper(this, "You are now afk, move to unafk")
+		} else {
+			this.lastMovedTime = performance.now();
+			this.room.chat.whisper(this, "You are no longer afk")
+		}
 	}
 	setCanGod(enabled) {
 		enabled = enabled ?? !this.canGod;
@@ -53,6 +69,9 @@ export class Player {
 	}
 	respawn() {
 		this.room.chat.send(`/resetplayer #${this.id}`);
+	}
+	teleport(x, y) {
+		this.room.chat.send(`/tp #${this.id} ${x} ${y}`);
 	}
 }
 
@@ -96,13 +115,19 @@ export class Players extends EventEmitter {
 		});
 		this.room.on("playerTeleportedPacket", packet => {
 			const player = this.get(packet.playerId);
-			player.position.x = packet.position.x;
-			player.position.y = packet.position.y;
+			if (packet.position) {
+				player.position.x = packet.position.x;
+				player.position.y = packet.position.y;
+				this.emit("moved", { player });
+			}
 		});
 		this.room.on("playerResetPacket", packet => {
 			const player = this.get(packet.playerId);
-			player.position.x = packet.position.x;
-			player.position.y = packet.position.y;
+			if (packet.position) {
+				player.position.x = packet.position.x;
+				player.position.y = packet.position.y;
+				this.emit("moved", { player });
+			}
 		})
 		this.room.on("playerMovedPacket", packet => {
 			const player = this.get(packet.playerId);
@@ -111,6 +136,7 @@ export class Players extends EventEmitter {
 			player.velocity.x = packet.velocityX;
 			player.velocity.y = packet.velocityY;
 			player.lastMovedPacket = packet;
+			this.emit("moved", { player });
 		});
 		// TODO
 		this.room.on("playerAddEffectPacket", packet => {
@@ -119,5 +145,25 @@ export class Players extends EventEmitter {
 		this.room.on("playerRemoveEffectPacket", packet => {
 
 		});
+		// Afk
+		this._checkAfkLastTime = performance.now();
+		this.on("moved", ({ player }) => {
+			if (player.afk)
+				player.setAfk(false);
+			const now = performance.now()
+			if (now - this._checkAfkLastTime > 5000) {
+				this._checkAfk();
+			}
+		});
+	}
+	[Symbol.iterator]() {
+		return this.players.values();
+	}
+	_checkAfk() {
+		const now = performance.now();
+		for (const player of this) {
+			if (now - player.lastMovedTime > 30000)
+				player.setAfk(true);
+		}
 	}
 }
