@@ -91,11 +91,15 @@ export class Room extends EventEmitter {
 	}
 	close(reason) {
 		if (!this.ws) return;
-		if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
-			this.ws.close();
+		reason = reason ?? "Closed by client";
+		if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+			if (this.ws.readyState === WebSocket.OPEN)
+				this.world.setTitleState(); // TODO doesnt set title
+			this.ws.close(1000, reason);
+		}
 		this.ws = undefined;
 		this.workqueue.stop();
-		this.emit("close", reason ?? "Closed by client");
+		this.emit("close", reason);
 	}
 	sendNow(name, value) {
 		if (!this.open) return;
