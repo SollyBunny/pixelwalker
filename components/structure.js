@@ -61,8 +61,8 @@ const specialBlocksNamed = {
 	"sign_green": [{ name: "text", type: Types.String }],
 	"sign_blue": [{ name: "text", type: Types.String }],
 	"sign_gold": [{ name: "text", type: Types.String }],
-	"portal": [{ name: "from", type: Types.Int32 }, { name: "to", type: Types.Int32 }, { name: "rotation", type: Types.Int32 }],
-	"portal_invisible": [{ name: "from", type: Types.Int32 }, { name: "to", type: Types.Int32 }, { name: "rotation", type: Types.Int32 }],
+	"portal": [{ name: "rotation", type: Types.Int32 }, { name: "id", type: Types.Int32 }, { name: "to", type: Types.Int32 }],
+	"portal_invisible": [{ name: "rotation", type: Types.Int32 }, { name: "id", type: Types.Int32 }, { name: "to", type: Types.Int32 }],
 	"portal_world": [{ name: "worldId", type: Types.String }, { name: "spawnId", type: Types.Int32 }],
 	"switch_local_toggle": [{ name: "id", type: Types.Int32 }],
 	"switch_local_activator": [{ name: "id", type: Types.Int32 }, { name: "enabled", type: Types.Boolean }],
@@ -147,7 +147,7 @@ export class Block {
 			for (const { name, type } of types) {
 				switch (type) {
 					case Types.Int32:
-						properties[name] = buffer.readInt32BE();
+						properties[name] = buffer.readInt32LE();
 						break;
 					case Types.Boolean:
 						properties[name] = buffer.readUInt8() === 1;
@@ -195,6 +195,7 @@ export class Block {
 		this.properties = properties;
 	}
 	equals(other) {
+		if (!other) return false;
 		if (this.id !== other.id) return false;
 		if (this.layer !== other.layer) return false;
 		if (this.types !== other.types) return false;
@@ -267,15 +268,22 @@ export class Structure {
 		const data = new Array(width * height * LAYER_COUNT);
 		colors = colors ?? manager.id2color;
 	
-		function bestColor(r, g, b) {
+		function bestColor(r, g, b, a) {
 			let best = "";
 			let bestDist = Infinity;
 			let bestColor = [0, 0, 0];
-			for (const [name, color] of colors.entries()) {
+			for (const [id, color] of colors.entries()) {
 				if (color[3] === 0) continue; // Ignore fully transparent colors
+				if (a !== 255) { // alpha picks layer
+					const layer = manager.layer(id);
+					if (
+						(a > 128 && layer === LAYER_BACKGROUND) ||
+						(a <= 128 && layer === LAYER_FOREGROUND)
+					) continue;
+				}
 				const dist = Math.abs(r - color[0]) + Math.abs(g - color[1]) + Math.abs(b - color[2]);
 				if (dist < bestDist) {
-					best = name;
+					best = id;
 					bestDist = dist;
 					bestColor = color;
 				}
@@ -306,7 +314,7 @@ export class Structure {
 				const g = clamp(raw[indexRaw + 1] + errorBuffer[indexError + 1]);
 				const b = clamp(raw[indexRaw + 2] + errorBuffer[indexError + 2]);
 	
-				const { id, color } = bestColor(r, g, b);
+				const { id, color } = bestColor(r, g, b, raw[indexRaw + 3]);
 				const block = Block.fromManager(manager, id);
 				if (!block) continue; // Skip unknown blocks
 
@@ -342,7 +350,7 @@ export class Structure {
 	constructor(width, height, data) {
 		this.width = width;
 		this.height = height;
-		this.data = data;
+		this.data = data ?? new Array(this.width * this.height * LAYER_COUNT);
 		if (this.data.length !== this.width * this.height * LAYER_COUNT)
 			throw new Error(`Data length does not match width, height, and LAYER_COUNT (${this.data.length} != ${this.width * this.height * LAYER_COUNT})`);
 	}
@@ -385,6 +393,39 @@ export class Structure {
 		}
 		return this.getSub(trimLeft, trimTop, this.width - trimRight, this.height - trimBottom);
 	}
+	rotate(degrees) {
+		if ([1, 2, 3].indexOf(degrees) === -1)
+			throw new Error("Degrees must be 1 (90deg), 2 (180deg), or 3 (270deg)");
+
+		let width, height;
+		if (degrees === 1 || degrees === 3) {
+			width = this.height;
+			height = this.width;
+		} else {
+			width = this.width;
+			height = this.height;
+		}
+
+		const structure = new Structure(width, height);
+		for (let y = 0; y < this.height; ++y) for (let x = 0; x < this.width; ++x) {
+			let xNew, yNew;
+			if (degrees === 1) {
+				xNew = y;
+				yNew = this.width - 1 - x;
+			} else if (degrees === 2) {
+				xNew = this.width - 1 - x;
+				yNew = this.height - 1 - y;
+			} else if (degrees === 3) {
+				xNew = this.height - 1 - y;
+				yNew = x;
+			}
+
+			for (let layer = 0; layer < LAYER_COUNT; ++layer)
+				structure.set(xNew, yNew, this.get(x, y, layer));
+		}
+
+		return structure;
+	}
 	index(x, y, layer) {
 		if (x < 0 || x >= this.width || y < 0 || y >= this.height || layer < 0 || layer >= LAYER_COUNT)
 			return undefined;
@@ -396,6 +437,7 @@ export class Structure {
 		return this.data[index];
 	}
 	set(x, y, block) {
+		if (!block) return;
 		const index = this.index(x, y, block.layer);
 		if (!index) return;
 		return this.data[index] = block.clone();
@@ -419,5 +461,23 @@ export class Structure {
 		if (!block) return;
 		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)
 			this.set(x, y, block);
+	}
+	setAreaClear(x1, y1, x2, y2) {
+		for (let layer = 0; layer < LAYER_COUNT; ++layer)
+			this.setArea(x1, y1, x2, y2, new Block(0, layer));
+	}
+	setAreaOutline(x1, y1, x2, y2, block) {
+		for (let x = x1; x <= x2; ++x) {
+			this.set(x, y1, block);
+			this.set(x, y2, block);
+		}
+		for (let y = y1 + 1; y <= y2 - 1; ++y) {
+			this.set(x1, y, block);
+			this.set(x2, y, block);
+		}
+	}
+	setAreaClearOutline(x1, y1, x2, y2, block) {
+		this.setAreaClear(x1 - 1, y1 - 1, x2 + 1, y2 + 1);
+		this.setAreaOutline(x1, y1, x2, y2, block);
 	}
 }
