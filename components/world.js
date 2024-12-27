@@ -24,17 +24,8 @@ export class World extends EventEmitter {
 			this._updateMeta(meta);
 		});
 		this.room.on("worldClearedPacket", async () => {
-			this.structure.setArea(0, 0, this.structure.width, this.structure.height, new Block(0, LAYER_BACKGROUND));
-			this.structure.setArea(1, 1, this.structure.width - 1, this.structure.height - 1, new Block(0, LAYER_FOREGROUND));
 			const block = Block.fromManager(this.room.client.blockManager, "basic_gray");
-			for (let x = 0; x < this.structure.width; ++x) {
-				this.structure.set(x, 0, block);
-				this.structure.set(x, this.structure.height - 1, block);
-			}
-			for (let y = 1; y < this.structure.height - 1; ++y) {
-				this.structure.set(0, y, block);
-				this.structure.set(this.structure.width - 1, y, block);
-			}
+			this.structure.setAreaClearOutline(0, 0, this.width, this.height, block);
 		});
 		this.room.on("worldBlockPlacedPacket", async packet => {
 			const { layer, playerId } = packet;
@@ -72,6 +63,18 @@ export class World extends EventEmitter {
 	setTitle(title) {
 		this.room.chat.send(`/title ${title}`);
 	}
+	setTitleState(state) {
+		const index = this.title.indexOf("[");
+		if (!state) {
+			if (index !== -1)
+				this.setTitle(this.title.slice(0, index).trimEnd());
+		} else {
+			if (index === -1)
+				this.setTitle(`${this.title} [${state}]`)
+			else
+				this.setTitle(`${this.title.slice(0, index).trimEnd()} [${state}]`);
+		}
+	}
 	setVisibility(visibility) {
 		if (["public", "unlisted", "friends", "private"].indexOf(visibility) === -1)
 			throw "Invalid visiblity level";
@@ -79,7 +82,14 @@ export class World extends EventEmitter {
 	}
 	_workqueueSource(add) {
 		const MAXPOSITIONS = 200;
-		for (const [block, positions] of this._workqueue) {
+		for (let [block, positions] of this._workqueue) {
+			positions = positions.filter(position => {
+				if (!block.equals(this.get(position.x, position.y, block.layer))) {
+					this._workqueueAdd([position], block);
+					return false;
+				}
+				return true;
+			});
 			const extraFields = block.serializeProperties();
 			if (positions.length > MAXPOSITIONS) {
 				for (let i = 0; i < positions.length; i += 100)
@@ -112,7 +122,12 @@ export class World extends EventEmitter {
 	}
 	setMany(positions, block) {
 		if (!block) return;
+		positions = positions.filter(({ x, y }) => 
+			!block.equals(this.get(x, y, block.layer))
+		);
 		this._workqueueAdd(positions, block);
+		for (const { x, y } of positions)
+			this.structure.set(x, y, block);
 		return block;
 	}
 	setManyNow(positions, block) {
@@ -122,6 +137,8 @@ export class World extends EventEmitter {
 			isFillOperation: false,
 			positions, layer: block.layer, blockId: block.id, extraFields
 		});
+		for (const { x, y } of positions)
+			this.structure.set(x, y, block);
 		return block;
 	}
 	set(x, y, block) {
@@ -194,12 +211,41 @@ export class World extends EventEmitter {
 		this.room.chat.whisper(player, `Selected region: ${x1}, ${y1} to ${x2}, ${y2}. Size: ${width}x${height} (${size} blocks)`);
 		return { x1, y1, x2, y2, width, height, size, blockOld1, blockOld2 };
 	}
+	setSub(x1, y1, structure) {
+		for (let x = 0; x < structure.width; ++x) for (let y = 0; y < structure.height; ++y) for (let layer = 0; layer < LAYER_COUNT; ++layer) {
+			const block = structure.get(x, y, layer);
+			if (!block) continue;
+			this.set(x1 + x, y1 + y, block);
+		}
+	}
+	setArea(x1, y1, x2, y2, block) {
+		if (!block) return;
+		for (let x = x1; x <= x2; ++x) for (let y = y1; y <= y2; ++y)
+			this.set(x, y, block);
+	}
+	setAreaClear(x1, y1, x2, y2) {
+		for (let layer = 0; layer < LAYER_COUNT; ++layer)
+			this.setArea(x1, y1, x2, y2, new Block(0, layer));
+	}
+	setAreaOutline(x1, y1, x2, y2, block) {
+		if (!block) return;
+		for (let x = x1; x <= x2; ++x) {
+			this.set(x, y1, block);
+			this.set(x, y2, block);
+		}
+		for (let y = y1 + 1; y <= y2 - 1; ++y) {
+			this.set(x1, y, block);
+			this.set(x2, y, block);
+		}
+	}
+	setAreaClearOutline(x1, y1, x2, y2, block) {
+		this.setAreaClear(x1 + 1, y1 + 1, x2 - 1, y2 - 1);
+		this.setAreaOutline(x1, y1, x2, y2, block);
+	}
 	// From structure
 	get width() { return this.structure.width; }
 	get height() { return this.structure.height; }
 	index(x, y, layer) { return this.structure.index(x, y, layer); }
 	get(x, y, layer) { return this.structure.get(x, y, layer); }
 	getSub(x1, y1, x2, y2) { return this.structure.getSub(x1, y1, x2, y2); }
-	setSub(x1, y1, structure) { return this.structure.setSub(x1, y1, structure); }
-	setArea(x1, y1, x2, y2, block) { return this.structure.setArea(x1, y1, x2, y2, block); }
 }
