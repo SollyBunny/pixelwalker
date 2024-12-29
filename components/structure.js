@@ -305,15 +305,17 @@ export class Structure {
 		];
 	
 		const errorBuffer = new Float32Array(raw.length); // Store accumulated errors
+		errorBuffer.fill(0);
 	
 		for (let y = 0; y < height; ++y) {
 			for (let x = 0; x < width; ++x) {
-				const indexError = (y * width + x) * 3;
 				const indexRaw = (y * width + x) * channels;
+				if (raw[indexRaw + 3] < 1) continue;
+			
+				const indexError = (y * width + x) * 3;
 				const r = clamp(raw[indexRaw + 0] + errorBuffer[indexError + 0]);
 				const g = clamp(raw[indexRaw + 1] + errorBuffer[indexError + 1]);
 				const b = clamp(raw[indexRaw + 2] + errorBuffer[indexError + 2]);
-	
 				const { id, color } = bestColor(r, g, b, raw[indexRaw + 3]);
 				const block = Block.fromManager(manager, id);
 				if (!block) continue; // Skip unknown blocks
